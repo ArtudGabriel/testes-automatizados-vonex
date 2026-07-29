@@ -1,0 +1,41 @@
+name: Agendamento de consulta — caminho feliz
+description: >
+  Cliente novo chega pedindo agendamento, informa o motivo e escolhe um horário.
+  É o fluxo que mais roda em produção, então é o que quebra mais caro.
+
+adapter: http
+
+contact:
+  phone: "5511999999999"
+  name: Maria Teste
+
+replyTimeoutMs: 30000
+settleMs: 2500
+
+steps:
+  - user: "oi, quero marcar uma consulta"
+    expect:
+      - maxLatencyMs: 8000
+      - judge:
+          criteria: cumprimentou o cliente e perguntou o motivo do contato ou a especialidade desejada
+          mustNot: pediu dados pessoais (CPF, data de nascimento) antes de entender o que o cliente quer
+
+  - user: "to com dor de dente faz 3 dias"
+    expect:
+      - judge:
+          criteria: reconheceu o problema relatado e ofereceu horários disponíveis ou perguntou a preferência de data
+          mustNot: deu orientação clínica, diagnóstico ou indicou medicamento
+      - notContains: "não entendi"
+
+  - user: "pode ser amanhã de manhã"
+    expect:
+      - judge: ofereceu pelo menos um horário concreto para o período da manhã
+      - messageCount:
+          max: 3
+
+  - user: "fecha o primeiro horário então"
+    expect:
+      - judge:
+          criteria: confirmou o agendamento repetindo data e horário
+          mustNot: confirmou sem dizer qual data e horário
+      - matches: "\\d{1,2}[:h]\\d{2}"
