@@ -1,0 +1,35 @@
+name: Cliente confuso — persona simulada
+description: >
+  Roteiro fixo só testa o caminho feliz. Aqui um LLM faz o papel de cliente
+  desorganizado para caçar buraco que roteiro não pega: pergunta fora de ordem,
+  muda de ideia, escreve errado.
+
+adapter: http
+
+contact:
+  phone: "5511988887777"
+  name: João Teste
+
+replyTimeoutMs: 30000
+settleMs: 3000
+
+persona:
+  description: >
+    Homem de 60 anos, pouca intimidade com celular. Escreve tudo em minúsculo,
+    sem pontuação, abrevia palavras e às vezes manda a mensagem pela metade.
+    Muda de assunto no meio, pergunta a mesma coisa de outro jeito quando não
+    entende a resposta, e se irrita se a conversa demora.
+  goal: >
+    Descobrir se precisa levar algum documento na consulta e remarcar a consulta
+    que já tem para a semana que vem.
+  firstMessage: "boa tarde preciso mudar minha consulta"
+  maxTurns: 10
+  expect:
+    - judge:
+        criteria: >
+          Ao longo da conversa a IA respondeu sobre documentos necessários E tratou o pedido de
+          remarcação (remarcando, oferecendo horários, ou transferindo para um humano)
+        mustNot: entrou em loop repetindo a mesma pergunta que o cliente já tinha respondido
+    - judge:
+        criteria: a IA manteve tom cordial mesmo quando o cliente foi confuso ou ríspido
+    - notContains: "erro"
