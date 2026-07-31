@@ -95,21 +95,102 @@ asseverar sobre o que a IA ofereceu, não só sobre o que ela escreveu.
 resposta é livre — cada asserção dessas é uma chamada de LLM. Rubrica específica ("confirmou o
 agendamento repetindo data e horário") produz muito menos ruído que rubrica vaga ("respondeu bem").
 
+### Briefing do projeto
+
+Todo cenário com persona precisa saber **o que a jornada faz**. Sem isso o cliente simulado
+improvisa: não sabe o que pedir, inventa um CPF quando a IA pede identificação, e insiste em
+algo que está fora do escopo.
+
+O briefing costuma ser o mesmo para todos os cenários de uma implantação, então mora num
+arquivo à parte (`projects/`) e os cenários apontam para ele:
+
+```yaml
+# scenarios/qualquer-cenario.yaml
+projectFile: ../projects/clinica-odonto.yaml
+```
+
+```yaml
+# projects/clinica-odonto.yaml
+name: Clínica OdontoVida
+segment: clínica odontológica de bairro
+description: >
+  Atendimento ao paciente pelo WhatsApp: agendar, remarcar e cancelar consultas...
+
+capabilities:                    # o que a IA deve resolver
+  - agendar consulta escolhendo especialidade, data e horário
+  - informar quais documentos levar
+
+outOfScope:                      # o que ela NÃO faz
+  - orientação clínica ou diagnóstico
+  - negociar preço ou dar desconto
+
+knownData:                       # dados que o cliente simulado tem em mãos
+  nome completo: Maria Aparecida de Souza
+  CPF: "123.456.789-00"
+  consulta já marcada: quinta-feira, 12/06, às 14:30
+
+glossary:
+  - term: profilaxia
+    meaning: limpeza dental de rotina
+
+escalation: Transferir para humano quando o paciente pedir, ou se houver dor forte
+```
+
+`outOfScope` faz dobradinha com o judge: recusar educadamente algo fora do escopo passa a ser
+avaliado como **acerto**, não como falha. `knownData` deve conter dados fictícios — eles vão
+para a plataforma e para o modelo.
+
+Um cenário pode trazer `project:` inline em vez de `projectFile`, mas não os dois.
+
 ### Modo persona
 
-Roteiro fixo só testa o caminho feliz. A persona põe um LLM no papel do cliente:
+Roteiro fixo só testa o caminho feliz. A persona põe um LLM no papel do cliente, vestindo um
+**arquétipo** — o tipo de cliente que vai fazer o teste:
+
+```yaml
+projectFile: ../projects/clinica-odonto.yaml
+
+persona:
+  archetype: angry              # journey-tester personas lista todos
+  goal: >
+    Resolver que perdeu a consulta porque ninguém avisou do atraso, e conseguir
+    um novo horário nesta semana.
+  maxTurns: 8
+  expect:                       # avaliado sobre a conversa inteira
+    - judge:
+        criteria: a IA manteve tom cordial do início ao fim
+        mustNot: prometeu desconto por conta própria
+```
+
+**Arquétipos disponíveis** (`journey-tester personas -v` mostra comportamento e táticas):
+
+| id | Cliente | O que estressa |
+|---|---|---|
+| `ideal` | Cliente ideal | caminho feliz, colabora e segue o fluxo |
+| `confused` | Cliente confuso | clareza da IA e recuperação de mal-entendido |
+| `angry` | Cliente bravo | tom, contenção e resistir a pedido de exceção |
+| `wants-human` | Quer humano | caminho de escalonamento |
+| `impatient` | Apressado | fluxo aguenta resposta curta e fora de ordem |
+| `indecisive` | Indeciso | refazer escolha sem perder o estado |
+| `distrustful` | Desconfiado | transparência sobre por que pede cada dado |
+| `boundary-tester` | Testa limites | recusa graciosa e vazamento de instrução |
+
+Cada arquétipo carrega comportamento (como escreve), **táticas** (o que faz de propósito para
+estressar a jornada) e o que conta como sucesso para aquele tipo — um `wants-human` "vence"
+sendo transferido, não sendo atendido pelo bot.
+
+Combine com `description` para somar traços ao arquétipo, ou use só `description` para um
+cliente que não cabe em nenhum:
 
 ```yaml
 persona:
-  description: Homem de 60 anos, escreve tudo em minúsculo, muda de assunto no meio
-  goal: Descobrir se precisa levar documento e remarcar a consulta
-  firstMessage: "boa tarde preciso mudar minha consulta"
-  maxTurns: 10
-  expect:                       # avaliado sobre a conversa inteira
-    - judge:
-        criteria: tratou os dois pedidos do cliente
-        mustNot: entrou em loop repetindo pergunta já respondida
+  archetype: distrustful
+  description: já teve o cartão clonado e ficou traumatizado com pedido de dado
+  goal: ...
 ```
+
+`firstMessage` é opcional: sem ele a própria persona abre a conversa, e um cliente bravo abre
+diferente de um cliente ideal. Fixe só quando o gatilho exato importar.
 
 A conversa para quando a persona considera o objetivo atingido, quando a IA trava, ou em
 `maxTurns`. Como o cliente é gerado a cada rodada, o resultado **não é determinístico** — é
@@ -123,6 +204,8 @@ npm run dev -- run scenarios/x.yaml --json out.json # relatório para CI
 npm run dev -- run scenarios/ --adapter cloud-api   # canal real
 npm run dev -- run scenarios/x.yaml --continue-on-failure
 npm run dev -- validate scenarios/                  # valida YAML sem chamar nada
+npm run dev -- personas                             # lista os tipos de cliente
+npm run dev -- personas -v                          # com comportamento e táticas
 npm test                                            # unit
 ```
 

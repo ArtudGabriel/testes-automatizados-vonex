@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { archetypeIds } from '../persona/archetypes';
+import { projectSchema } from './project.schema';
 
 export const ADAPTER_NAMES = ['http', 'cloud-api'] as const;
 export type AdapterName = (typeof ADAPTER_NAMES)[number];
@@ -69,13 +71,33 @@ export const stepSchema = z
 
 export type StepSpec = z.infer<typeof stepSchema>;
 
-export const personaSchema = z.strictObject({
-  description: z.string().min(1),
-  goal: z.string().min(1),
-  firstMessage: z.string().min(1),
-  maxTurns: z.number().int().positive().max(30).default(8),
-  expect: z.array(assertionSchema).default([]),
-});
+export const personaSchema = z
+  .strictObject({
+    /** Arquétipo do catálogo (`journey-tester personas` lista todos). */
+    archetype: z.string().min(1).optional(),
+    /** Traços extras, ou a persona inteira quando não há arquétipo. */
+    description: z.string().min(1).optional(),
+    goal: z.string().min(1),
+    /** Opcional: sem isso a própria persona escreve a primeira mensagem. */
+    firstMessage: z.string().min(1).optional(),
+    maxTurns: z.number().int().positive().max(30).default(8),
+    expect: z.array(assertionSchema).default([]),
+  })
+  .superRefine((value, ctx) => {
+    if (value.archetype === undefined && value.description === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `persona precisa de \`archetype\` (${archetypeIds().join(' | ')}) ou \`description\` livre`,
+      });
+    }
+    if (value.archetype !== undefined && !archetypeIds().includes(value.archetype)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['archetype'],
+        message: `arquétipo desconhecido "${value.archetype}". Disponíveis: ${archetypeIds().join(', ')}`,
+      });
+    }
+  });
 
 export type PersonaSpec = z.infer<typeof personaSchema>;
 
@@ -94,6 +116,10 @@ export const scenarioSchema = z
     replyTimeoutMs: z.number().int().positive().default(30_000),
     /** Silêncio que define o fim do turno — a IA costuma mandar 2-3 mensagens seguidas. */
     settleMs: z.number().int().positive().default(2_500),
+    /** Briefing da jornada, inline. */
+    project: projectSchema.optional(),
+    /** Briefing num arquivo à parte, compartilhado entre os cenários da implantação. */
+    projectFile: z.string().min(1).optional(),
     steps: z.array(stepSchema).min(1).optional(),
     persona: personaSchema.optional(),
   })
@@ -108,6 +134,19 @@ export const scenarioSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'cenário aceita `steps` ou `persona`, não os dois',
+      });
+    }
+    if (value.project && value.projectFile) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'cenário aceita `project` (inline) ou `projectFile`, não os dois',
+      });
+    }
+    if (value.persona && !value.project && !value.projectFile) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'cenário com `persona` precisa de `project` ou `projectFile` — sem briefing o cliente simulado improvisa',
       });
     }
   });

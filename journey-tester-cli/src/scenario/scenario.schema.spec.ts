@@ -91,9 +91,69 @@ describe('scenarioSchema', () => {
   it('aceita cenário de persona com maxTurns default', () => {
     const result = scenarioSchema.safeParse({
       name: 'persona',
-      persona: { description: 'cliente apressado', goal: 'agendar', firstMessage: 'oi' },
+      projectFile: '../projects/x.yaml',
+      persona: { archetype: 'impatient', goal: 'agendar' },
     });
     expect(result.success).toBe(true);
     if (result.success) expect(result.data.persona?.maxTurns).toBe(8);
+  });
+
+  it('recusa persona sem briefing do projeto', () => {
+    const result = scenarioSchema.safeParse({
+      name: 'persona',
+      persona: { archetype: 'ideal', goal: 'agendar' },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('recusa project e projectFile juntos', () => {
+    const result = scenarioSchema.safeParse({
+      name: 'persona',
+      project: { name: 'X', description: 'y' },
+      projectFile: './x.yaml',
+      persona: { archetype: 'ideal', goal: 'agendar' },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('não exige briefing em cenário de steps', () => {
+    expect(scenarioSchema.safeParse(validScenario).success).toBe(true);
+  });
+});
+
+describe('personaSchema (via scenarioSchema)', () => {
+  const base = { name: 'x', projectFile: './p.yaml' };
+
+  it('exige archetype ou description', () => {
+    const result = scenarioSchema.safeParse({ ...base, persona: { goal: 'agendar' } });
+    expect(result.success).toBe(false);
+  });
+
+  it('recusa arquétipo inexistente e sugere os válidos', () => {
+    const result = scenarioSchema.safeParse({
+      ...base,
+      persona: { archetype: 'cliente-nervoso', goal: 'agendar' },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.message.includes('angry'))).toBe(true);
+    }
+  });
+
+  it('aceita archetype e description juntos', () => {
+    const result = scenarioSchema.safeParse({
+      ...base,
+      persona: { archetype: 'angry', description: 'já reclamou duas vezes', goal: 'agendar' },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('deixa firstMessage opcional', () => {
+    const result = scenarioSchema.safeParse({
+      ...base,
+      persona: { archetype: 'ideal', goal: 'agendar' },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.persona?.firstMessage).toBeUndefined();
   });
 });

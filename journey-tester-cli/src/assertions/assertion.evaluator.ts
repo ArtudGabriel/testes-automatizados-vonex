@@ -1,3 +1,4 @@
+import type { ProjectSpec } from '../scenario/project.schema';
 import type { AssertionSpec } from '../scenario/scenario.schema';
 import type { AssertionResult } from '../runner/run-result.types';
 import {
@@ -16,6 +17,8 @@ export interface EvaluationContext {
   userMessage: string;
   /** Conversa até o turno anterior, formatada para o judge. */
   transcript: string;
+  /** Briefing da jornada, quando o cenário define. */
+  project?: ProjectSpec;
 }
 
 /**
@@ -52,6 +55,7 @@ async function evaluateOne(
     return evaluateJudge({
       criteria: judge.criteria,
       ...(judge.mustNot === undefined ? {} : { mustNot: judge.mustNot }),
+      ...(context.project === undefined ? {} : { project: context.project }),
       transcript: context.transcript,
       turnText: flattenTurn(context.turn.messages),
       userMessage: context.userMessage,

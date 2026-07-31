@@ -43,6 +43,10 @@ export interface ScenarioResult {
   error?: string;
   /** Modo persona: se o objetivo declarado foi atingido. */
   goalAchieved?: boolean;
+  /** Modo persona: rótulo do arquétipo usado. */
+  persona?: string;
+  /** Nome do projeto/jornada sob teste. */
+  project?: string;
 }
 
 export interface RunSummary {

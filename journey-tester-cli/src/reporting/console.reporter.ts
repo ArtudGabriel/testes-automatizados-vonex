@@ -15,9 +15,19 @@ function out(line = ''): void {
   process.stdout.write(`${line}\n`);
 }
 
-export function reportScenarioHeader(scenario: { name: string; adapter: string }): void {
+export function reportScenarioHeader(scenario: {
+  name: string;
+  adapter: string;
+  persona?: string;
+  project?: string;
+}): void {
   out();
-  out(pc.bold(scenario.name) + pc.dim(` · adapter ${scenario.adapter}`));
+  const meta = [
+    `adapter ${scenario.adapter}`,
+    ...(scenario.project ? [scenario.project] : []),
+    ...(scenario.persona ? [scenario.persona] : []),
+  ].join(' · ');
+  out(pc.bold(scenario.name) + pc.dim(` · ${meta}`));
 }
 
 export function reportTurn(turn: TurnResult): void {
@@ -61,7 +71,8 @@ export function reportScenarioResult(scenario: ScenarioResult): void {
     const goal = scenario.goalAchieved
       ? pc.green('objetivo atingido')
       : pc.yellow('objetivo não atingido');
-    out(`  ${pc.dim('persona:')} ${goal} em ${scenario.turns.length} turno(s)`);
+    const who = scenario.persona ? `${scenario.persona}: ` : '';
+    out(`  ${pc.dim(who)}${goal} em ${scenario.turns.length} turno(s)`);
   }
 
   for (const assertion of scenario.finalAssertions) {

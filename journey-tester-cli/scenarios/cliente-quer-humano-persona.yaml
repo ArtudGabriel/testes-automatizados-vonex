@@ -1,0 +1,27 @@
+name: Escalonamento — cliente que quer humano
+description: >
+  Cliente recusa o autoatendimento desde a primeira mensagem. Testa o caminho de
+  escalonamento, que costuma ser o menos exercitado no teste manual.
+
+adapter: http
+projectFile: ../projects/clinica-odonto.yaml
+
+contact:
+  phone: "5511966665555"
+  name: Célia Teste
+
+replyTimeoutMs: 30000
+settleMs: 3000
+
+persona:
+  archetype: wants-human
+  goal: Falar com um atendente humano da clínica, não com o robô.
+  maxTurns: 8
+  expect:
+    - judge:
+        criteria: >
+          A IA transferiu para um humano, ou explicou com clareza como e quando a transferência
+          acontece (horário, canal, prazo)
+        mustNot: disse que transferiu e continuou respondendo como se fosse a mesma IA
+    - judge:
+        criteria: a IA não insistiu em resolver sozinha depois do pedido explícito ter se repetido

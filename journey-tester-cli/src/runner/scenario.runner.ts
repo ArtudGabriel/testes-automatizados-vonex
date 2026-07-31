@@ -1,7 +1,12 @@
 import { evaluateAssertions } from '../assertions/assertion.evaluator';
 import { flattenTurn } from '../assertions/deterministic.evaluator';
 import type { ChannelAdapter, TurnReply } from '../adapters/channel.adapter';
-import { nextPersonaTurn } from '../persona/persona.simulator';
+import {
+  describePersona,
+  nextPersonaTurn,
+  openingPersonaMessage,
+} from '../persona/persona.simulator';
+import type { ProjectSpec } from '../scenario/project.schema';
 import type { LoadedScenario } from '../scenario/scenario.loader';
 import type { AssertionSpec, ScenarioSpec, StepSpec } from '../scenario/scenario.schema';
 import { logger } from '../shared/logger';
@@ -20,7 +25,7 @@ export class ScenarioRunner {
   ) {}
 
   async run(scenario: LoadedScenario): Promise<ScenarioResult> {
-    const { spec, filePath } = scenario;
+    const { spec, filePath, project } = scenario;
     const startedAt = Date.now();
 
     const result: ScenarioResult = {
@@ -32,14 +37,16 @@ export class ScenarioRunner {
       durationMs: 0,
       turns: [],
       finalAssertions: [],
+      ...(spec.persona ? { persona: describePersona(spec.persona) } : {}),
+      ...(project ? { project: project.name } : {}),
     };
 
     try {
       await this.adapter.open({ contact: spec.contact, scenarioName: spec.name });
       if (spec.persona) {
-        await this.runPersona(spec, result);
+        await this.runPersona(spec, result, project);
       } else {
-        await this.runSteps(spec, result);
+        await this.runSteps(spec, result, project);
       }
     } catch (error) {
       result.error = (error as Error).message;
@@ -59,11 +66,15 @@ export class ScenarioRunner {
     return result;
   }
 
-  private async runSteps(spec: ScenarioSpec, result: ScenarioResult): Promise<void> {
+  private async runSteps(
+    spec: ScenarioSpec,
+    result: ScenarioResult,
+    project?: ProjectSpec,
+  ): Promise<void> {
     const steps = spec.steps ?? [];
 
     for (const [index, step] of steps.entries()) {
-      const turn = await this.playTurn(spec, result, index, step);
+      const turn = await this.playTurn(spec, result, index, step, project);
       result.turns.push(turn);
       this.options.onTurn?.(turn);
 
@@ -79,6 +90,7 @@ export class ScenarioRunner {
     result: ScenarioResult,
     index: number,
     step: StepSpec,
+    project?: ProjectSpec,
   ): Promise<TurnResult> {
     const transcript = buildTranscript(result.turns);
     const userMessage = step.user ?? `[toca em "${step.tapOption}"]`;
@@ -102,14 +114,27 @@ export class ScenarioRunner {
       reply,
       expectations: step.expect,
       transcript,
+      ...(project === undefined ? {} : { project }),
     });
   }
 
-  private async runPersona(spec: ScenarioSpec, result: ScenarioResult): Promise<void> {
+  private async runPersona(
+    spec: ScenarioSpec,
+    result: ScenarioResult,
+    project?: ProjectSpec,
+  ): Promise<void> {
     const persona = spec.persona;
     if (!persona) return;
 
-    let userMessage = persona.firstMessage;
+    if (!project) {
+      throw new Error('cenário com persona exige `project` ou `projectFile`');
+    }
+
+    // Sem primeira mensagem fixa, a própria persona abre a conversa — é assim
+    // que o arquétipo aparece já no primeiro turno.
+    let userMessage =
+      persona.firstMessage ??
+      (await openingPersonaMessage({ persona, project, transcript: '' }));
 
     for (let index = 0; index < persona.maxTurns; index += 1) {
       const transcript = buildTranscript(result.turns);
@@ -127,6 +152,7 @@ export class ScenarioRunner {
         reply,
         expectations: [],
         transcript,
+        project,
       });
       result.turns.push(turn);
       this.options.onTurn?.(turn);
@@ -138,6 +164,7 @@ export class ScenarioRunner {
 
       const next = await nextPersonaTurn({
         persona,
+        project,
         transcript: buildTranscript(result.turns),
       });
 
@@ -165,6 +192,7 @@ export class ScenarioRunner {
       },
       userMessage: `objetivo da persona: ${persona.goal}`,
       transcript: buildTranscript(result.turns),
+      project,
     });
   }
 
@@ -175,11 +203,13 @@ export class ScenarioRunner {
     reply: TurnReply;
     expectations: AssertionSpec[];
     transcript: string;
+    project?: ProjectSpec;
   }): Promise<TurnResult> {
     const assertions = await evaluateAssertions(params.expectations, {
       turn: { messages: params.reply.messages, latencyMs: params.reply.latencyMs },
       userMessage: params.userMessage,
       transcript: params.transcript,
+      ...(params.project === undefined ? {} : { project: params.project }),
     });
 
     return {

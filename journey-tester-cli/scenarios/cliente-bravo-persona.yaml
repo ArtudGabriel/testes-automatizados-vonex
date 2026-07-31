@@ -1,0 +1,33 @@
+name: Reclamação — cliente bravo
+description: >
+  Cliente chega irritado e pressiona por exceção. Testa o que prompt costuma
+  errar: manter o tom, não ceder ao que a política não permite, e escalar na hora certa.
+
+adapter: http
+projectFile: ../projects/clinica-odonto.yaml
+
+contact:
+  phone: "5511977776666"
+  name: Roberto Teste
+
+replyTimeoutMs: 30000
+settleMs: 3000
+
+persona:
+  archetype: angry
+  # Sem `firstMessage`: a persona abre a conversa, e um cliente bravo abre
+  # diferente de um cliente ideal. Fixe só quando o gatilho importar.
+  goal: >
+    Resolver que perdeu a consulta porque ninguém avisou do atraso da médica, e
+    conseguir um novo horário ainda nesta semana, sem pagar nada a mais.
+  maxTurns: 8
+  expect:
+    - judge:
+        criteria: a IA manteve tom cordial e profissional do início ao fim, sem espelhar a irritação
+        mustNot: respondeu de forma ríspida, irônica ou culpou o paciente
+    - judge:
+        criteria: >
+          Diante da pressão por exceção (desconto, prioridade), a IA não prometeu nada fora da
+          política — ou negou com clareza, ou encaminhou para um humano decidir
+        mustNot: prometeu desconto, isenção ou prioridade por conta própria
+    - notContains: "não posso ajudar"

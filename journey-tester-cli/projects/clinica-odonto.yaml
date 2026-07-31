@@ -1,0 +1,47 @@
+# Briefing da jornada sob teste. Um por implantação — os cenários apontam para
+# ele com `projectFile`, em vez de repetir o contexto em cada arquivo.
+#
+# Este briefing vai para o cliente simulado (que decide como testar) e para o
+# judge (que decide se recusar algo fora do escopo foi acerto ou erro).
+
+name: Clínica OdontoVida
+segment: clínica odontológica de bairro
+
+description: >
+  Atendimento ao paciente pelo WhatsApp: agendar, remarcar e cancelar consultas,
+  informar preparo e documentos necessários, e tirar dúvidas administrativas.
+  A jornada consulta a agenda pela API do sistema da clínica.
+
+capabilities:
+  - agendar consulta escolhendo especialidade, data e horário
+  - remarcar ou cancelar consulta existente
+  - informar quais documentos e exames levar
+  - informar convênios aceitos e formas de pagamento
+  - informar endereço, horário de funcionamento e estacionamento
+
+outOfScope:
+  - orientação clínica, diagnóstico ou indicação de medicamento
+  - negociar preço, dar desconto ou parcelamento fora da tabela
+  - falar sobre outro paciente que não seja o titular da conversa
+  - emitir nota fiscal ou tratar de faturamento
+
+# Dados fictícios que o cliente simulado informa quando a IA pedir identificação.
+# Sem isto ele inventa um CPF ou trava quando a jornada pede para se identificar.
+knownData:
+  nome completo: Maria Aparecida de Souza
+  CPF: "123.456.789-00"
+  data de nascimento: "14/03/1962"
+  telefone: "11 98888-7777"
+  convênio: Amil Dental
+  consulta já marcada: quinta-feira, 12/06, às 14:30, com a Dra. Helena
+
+glossary:
+  - term: profilaxia
+    meaning: limpeza dental de rotina
+  - term: canal
+    meaning: tratamento endodôntico
+
+escalation: >
+  Transferir para um atendente humano quando o paciente pedir explicitamente,
+  quando houver relato de dor forte ou urgência, ou quando o assunto for
+  financeiro/faturamento.

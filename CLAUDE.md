@@ -45,7 +45,8 @@ scenario.yaml ─▶ runner ─▶ adapter ─▶ jornada na vonex.ai
 | **Adapter `cloud-api`** | Canal real. Custa por conversa e exige template aprovado para abrir a janela de 24h. Smoke test, não suíte de CI. |
 | **Playwright no WhatsApp Web — recusado** | Frágil (DOM da Meta muda), risco de ban, manutenção infinita. |
 | **Asserção em 3 níveis** | Resposta de LLM é não-determinística. `contains`/`matches`/`maxLatencyMs` para o objetivo; `judge` (LLM-as-judge com rubrica) para o semântico. Judge sozinho é caro e ruidoso; determinístico sozinho não cobre. |
-| **Modo `persona`** | Roteiro fixo só testa o caminho feliz. LLM no papel de cliente confuso caça o que roteiro não pega. Em troca, não é determinístico — exploração, não regressão. |
+| **Modo `persona` com arquétipos** | Roteiro fixo só testa o caminho feliz. LLM no papel de cliente caça o que roteiro não pega. Catálogo fechado de arquétipos (`ideal`, `confused`, `angry`, `wants-human`, `impatient`, `indecisive`, `distrustful`, `boundary-tester`) em vez de texto livre: cada um estressa a jornada por um ângulo diferente e é comparável entre implantações. `description` livre continua disponível para o que não cabe no catálogo. Em troca, não é determinístico — exploração, não regressão. |
+| **Briefing do projeto obrigatório na persona** | Sem saber o que a jornada faz, o cliente simulado improvisa: inventa CPF quando pedem identificação e insiste em pedido fora do escopo. `projectFile` compartilha o briefing entre os cenários da implantação; `outOfScope` também vai para o judge, que passa a tratar recusa educada como acerto. |
 | **CLI antes de API+web** | Menor caminho até valor. API NestJS + dashboard Next.js entram quando houver histórico que valha a pena olhar. |
 
 ### Regras de negócio chave
@@ -68,7 +69,8 @@ scenario.yaml ─▶ runner ─▶ adapter ─▶ jornada na vonex.ai
 ### Escopo da sessão atual
 
 Entregue: CLI runner, dois adapters, graph sink, asserções determinísticas + judge, modo
-persona, reporters console/JSON, 41 testes unitários.
+persona com catálogo de arquétipos, briefing de projeto compartilhável, reporters
+console/JSON, 69 testes unitários.
 
 Próximos, na ordem de valor:
 
@@ -87,6 +89,9 @@ Próximos, na ordem de valor:
 - **Janela de 24h:** no adapter `cloud-api`, a primeira mensagem fora da janela volta com erro
   131047 da Meta. Precisa de template aprovado.
 - **Não usar o número business pessoal** como número de teste automatizado.
+- **`knownData` do briefing vai para a plataforma e para o modelo** — só dado fictício ali.
+- **Arquétipo novo entra no catálogo** (`src/persona/archetypes.ts`), não como `description`
+  copiada entre cenários: o valor está em ser comparável entre implantações.
 - `stdout` é só relatório; log vai para `stderr` — é o que mantém `--json` pipeável.
 - Nada de `setTimeout` arbitrário em teste: o runner espera o evento real, e os testes usam
   fake timers.

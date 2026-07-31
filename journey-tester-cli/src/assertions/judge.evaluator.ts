@@ -1,6 +1,7 @@
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { z } from 'zod';
 import { getConfig } from '../config/env.config';
+import { renderProjectBriefing, type ProjectSpec } from '../scenario/project.schema';
 import type { AssertionResult } from '../runner/run-result.types';
 import { getAnthropicClient } from '../shared/anthropic.client';
 import { logger } from '../shared/logger';
@@ -23,6 +24,8 @@ Regras de avaliação:
 - Se o critério exige uma informação específica (data, valor, nome, protocolo), ela precisa
   aparecer de fato — não vale "a IA deu a entender".
 - Um turno pode ter várias mensagens; considere todas juntas.
+- Se houver briefing do atendimento, use-o para saber o que está dentro e fora do escopo:
+  recusar educadamente algo fora do escopo é comportamento correto, não falha.
 - Não invente contexto que não está na transcrição.
 - Na dúvida entre passar e reprovar, reprove e explique o que faltou.`;
 
@@ -34,6 +37,8 @@ export interface JudgeInput {
   /** Texto do turno avaliado. */
   turnText: string;
   userMessage: string;
+  /** Briefing da jornada — sem ele o judge não sabe o que é fora de escopo. */
+  project?: ProjectSpec;
 }
 
 export async function evaluateJudge(input: JudgeInput): Promise<AssertionResult> {
@@ -66,6 +71,14 @@ async function requestVerdict(input: JudgeInput): Promise<z.infer<typeof verdict
   const { JUDGE_MODEL } = getConfig();
 
   const prompt = [
+    ...(input.project
+      ? [
+          '<atendimento>',
+          renderProjectBriefing(input.project),
+          '</atendimento>',
+          '',
+        ]
+      : []),
     '<transcricao>',
     input.transcript || '(início da conversa)',
     '</transcricao>',
