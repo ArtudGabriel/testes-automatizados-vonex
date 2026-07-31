@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { archetypeIds } from '../persona/archetypes';
+import { apiCallAssertionSchema, apiSpySchema } from './api-spy.schema';
 import { projectSchema } from './project.schema';
 
 export const ADAPTER_NAMES = ['http', 'cloud-api'] as const;
@@ -34,6 +35,10 @@ export const assertionSchema = z
     judge: judgeSchema.optional(),
     maxLatencyMs: z.number().int().positive().optional(),
     messageCount: messageCountSchema.optional(),
+    /** A jornada chamou a API externa como deveria. */
+    apiCall: apiCallAssertionSchema.optional(),
+    /** A jornada NÃO chamou este endpoint. */
+    noApiCall: z.string().min(1).optional(),
   })
   .superRefine((value, ctx) => {
     const defined = Object.values(value).filter((entry) => entry !== undefined);
@@ -120,6 +125,8 @@ export const scenarioSchema = z
     project: projectSchema.optional(),
     /** Briefing num arquivo à parte, compartilhado entre os cenários da implantação. */
     projectFile: z.string().min(1).optional(),
+    /** Intercepta e stuba as APIs externas que a jornada consome. */
+    apiSpy: apiSpySchema.optional(),
     steps: z.array(stepSchema).min(1).optional(),
     persona: personaSchema.optional(),
   })
@@ -147,6 +154,19 @@ export const scenarioSchema = z
         code: z.ZodIssueCode.custom,
         message:
           'cenário com `persona` precisa de `project` ou `projectFile` — sem briefing o cliente simulado improvisa',
+      });
+    }
+
+    const usesApiAssertions = [
+      ...(value.steps ?? []).flatMap((step) => step.expect),
+      ...(value.persona?.expect ?? []),
+    ].some((assertion) => assertion.apiCall !== undefined || assertion.noApiCall !== undefined);
+
+    if (usesApiAssertions && !value.apiSpy) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'asserções `apiCall`/`noApiCall` exigem o bloco `apiSpy` — sem ele nada é interceptado',
       });
     }
   });

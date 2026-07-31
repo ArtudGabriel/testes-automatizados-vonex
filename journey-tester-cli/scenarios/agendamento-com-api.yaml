@@ -1,0 +1,61 @@
+name: Agendamento — resposta e chamada de API
+description: >
+  Asserção de texto sozinha não pega o pior bug: a IA responder "agendado!" sem
+  ter chamado a agenda, ou chamar com o paciente errado. Aqui o spy intercepta
+  as APIs externas e o cenário assevera sobre a chamada, não só sobre a resposta.
+
+adapter: http
+projectFile: ../projects/clinica-odonto.yaml
+
+contact:
+  phone: "5511999999999"
+  name: Maria Teste
+
+replyTimeoutMs: 30000
+settleMs: 2500
+
+# Aponte a base URL da API da clínica, no ambiente de teste da vonex.ai,
+# para http://127.0.0.1:4030 (API_SPY_HOST/API_SPY_PORT).
+apiSpy:
+  stubs:
+    - match: GET /agenda/horarios
+      respond:
+        body:
+          horarios:
+            - { id: "h_0900", inicio: "2026-06-12T09:00", profissional: "Dra. Helena" }
+            - { id: "h_1400", inicio: "2026-06-12T14:00", profissional: "Dr. Paulo" }
+
+    - match: POST /agenda/consultas
+      respond:
+        status: 201
+        body: { id: 987, status: "confirmada", inicio: "2026-06-12T09:00" }
+
+    # Qualquer outra chamada à agenda devolve 200 vazio, mas fica registrada.
+    - match: /agenda/*
+      respond:
+        status: 200
+        body: {}
+
+steps:
+  - user: "oi, quero marcar uma consulta"
+    expect:
+      - judge: cumprimentou e perguntou o motivo do contato ou a especialidade
+      - noApiCall: POST /agenda/consultas    # não pode agendar antes de saber o quê
+
+  - user: "limpeza, pode ser semana que vem de manhã"
+    expect:
+      - judge: ofereceu horários concretos
+      - apiCall:
+          to: GET /agenda/horarios
+          times: 1
+
+  - user: "o das 9 tá ótimo"
+    expect:
+      - contains: "confirmada"
+      - apiCall:
+          to: POST /agenda/consultas
+          times: 1
+          bodyContains:
+            paciente_cpf: "123.456.789-00"
+            horario_id: "h_0900"
+      - noApiCall: DELETE /agenda/*

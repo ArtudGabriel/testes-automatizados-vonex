@@ -1,6 +1,8 @@
 import { evaluateAssertions } from '../assertions/assertion.evaluator';
 import { flattenTurn } from '../assertions/deterministic.evaluator';
 import type { ChannelAdapter, TurnReply } from '../adapters/channel.adapter';
+import { ApiSpyServer, type RecordedApiCall } from '../capture/api-spy.server';
+import { getConfig } from '../config/env.config';
 import {
   describePersona,
   nextPersonaTurn,
@@ -19,6 +21,8 @@ export interface RunnerOptions {
 }
 
 export class ScenarioRunner {
+  private apiSpy?: ApiSpyServer;
+
   constructor(
     private readonly adapter: ChannelAdapter,
     private readonly options: RunnerOptions,
@@ -42,6 +46,7 @@ export class ScenarioRunner {
     };
 
     try {
+      await this.startApiSpy(spec);
       await this.adapter.open({ contact: spec.contact, scenarioName: spec.name });
       if (spec.persona) {
         await this.runPersona(spec, result, project);
@@ -55,6 +60,10 @@ export class ScenarioRunner {
       await this.adapter.close().catch((error: unknown) => {
         logger.warn('falha ao fechar adapter', { error: (error as Error).message });
       });
+      await this.apiSpy?.stop().catch((error: unknown) => {
+        logger.warn('falha ao parar api spy', { error: (error as Error).message });
+      });
+      this.apiSpy = undefined;
     }
 
     result.durationMs = Date.now() - startedAt;
@@ -64,6 +73,18 @@ export class ScenarioRunner {
       result.finalAssertions.every((assertion) => assertion.passed);
 
     return result;
+  }
+
+  private async startApiSpy(spec: ScenarioSpec): Promise<void> {
+    if (!spec.apiSpy) return;
+
+    const config = getConfig();
+    this.apiSpy = new ApiSpyServer({
+      host: config.API_SPY_HOST,
+      port: spec.apiSpy.port ?? config.API_SPY_PORT,
+      stubs: spec.apiSpy.stubs,
+    });
+    await this.apiSpy.start();
   }
 
   private async runSteps(
@@ -94,6 +115,7 @@ export class ScenarioRunner {
   ): Promise<TurnResult> {
     const transcript = buildTranscript(result.turns);
     const userMessage = step.user ?? `[toca em "${step.tapOption}"]`;
+    const apiMarker = this.apiSpy?.callCount ?? 0;
 
     if (step.tapOption !== undefined) {
       const optionTitle = findOptionTitle(result.turns, step.tapOption);
@@ -114,6 +136,7 @@ export class ScenarioRunner {
       reply,
       expectations: step.expect,
       transcript,
+      apiCalls: this.apiSpy?.callsSince(apiMarker) ?? [],
       ...(project === undefined ? {} : { project }),
     });
   }
@@ -138,6 +161,7 @@ export class ScenarioRunner {
 
     for (let index = 0; index < persona.maxTurns; index += 1) {
       const transcript = buildTranscript(result.turns);
+      const apiMarker = this.apiSpy?.callCount ?? 0;
 
       await this.adapter.sendText(userMessage);
       const reply = await this.adapter.waitForReply({
@@ -152,6 +176,7 @@ export class ScenarioRunner {
         reply,
         expectations: [],
         transcript,
+        apiCalls: this.apiSpy?.callsSince(apiMarker) ?? [],
         project,
       });
       result.turns.push(turn);
@@ -192,6 +217,7 @@ export class ScenarioRunner {
       },
       userMessage: `objetivo da persona: ${persona.goal}`,
       transcript: buildTranscript(result.turns),
+      apiCalls: this.apiSpy?.allCalls() ?? [],
       project,
     });
   }
@@ -203,12 +229,14 @@ export class ScenarioRunner {
     reply: TurnReply;
     expectations: AssertionSpec[];
     transcript: string;
+    apiCalls: RecordedApiCall[];
     project?: ProjectSpec;
   }): Promise<TurnResult> {
     const assertions = await evaluateAssertions(params.expectations, {
       turn: { messages: params.reply.messages, latencyMs: params.reply.latencyMs },
       userMessage: params.userMessage,
       transcript: params.transcript,
+      apiCalls: params.apiCalls,
       ...(params.project === undefined ? {} : { project: params.project }),
     });
 
@@ -217,6 +245,7 @@ export class ScenarioRunner {
       userMessage: params.userMessage,
       isOptionReply: params.isOptionReply,
       botMessages: params.reply.messages,
+      apiCalls: params.apiCalls,
       latencyMs: params.reply.latencyMs,
       timedOut: params.reply.timedOut,
       assertions,

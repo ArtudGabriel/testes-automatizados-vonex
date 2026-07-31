@@ -1,6 +1,8 @@
+import type { RecordedApiCall } from '../capture/api-spy.server';
 import type { ProjectSpec } from '../scenario/project.schema';
 import type { AssertionSpec } from '../scenario/scenario.schema';
 import type { AssertionResult } from '../runner/run-result.types';
+import { evaluateApiCall, evaluateNoApiCall } from './api-call.evaluator';
 import {
   evaluateContains,
   evaluateMatches,
@@ -19,6 +21,8 @@ export interface EvaluationContext {
   transcript: string;
   /** Briefing da jornada, quando o cenário define. */
   project?: ProjectSpec;
+  /** Chamadas que a jornada fez à API externa durante o turno. */
+  apiCalls: RecordedApiCall[];
 }
 
 /**
@@ -49,6 +53,8 @@ async function evaluateOne(
   if (spec.messageCount !== undefined) {
     return evaluateMessageCount(spec.messageCount, context.turn);
   }
+  if (spec.apiCall !== undefined) return evaluateApiCall(spec.apiCall, context.apiCalls);
+  if (spec.noApiCall !== undefined) return evaluateNoApiCall(spec.noApiCall, context.apiCalls);
 
   if (spec.judge !== undefined) {
     const judge = typeof spec.judge === 'string' ? { criteria: spec.judge } : spec.judge;

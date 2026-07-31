@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancela execução anterior do mesmo PR quando chega commit novo.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cli:
+    name: journey-tester-cli
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: journey-tester-cli
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: journey-tester-cli/package-lock.json
+
+      # ci em vez de install: falha se o lockfile estiver fora de sincronia.
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # Valida os cenários versionados sem chamar plataforma nem LLM.
+      # Pega erro de YAML, arquétipo inexistente e projectFile quebrado.
+      - name: Validate scenarios
+        run: node dist/cli.js validate scenarios/

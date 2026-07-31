@@ -87,6 +87,8 @@ mensagens seguidas; agrupá-las evita asserção que falha à toa. É espera pel
 | `messageCount: { min, max }` | pega IA tagarela ou muda |
 | `judge: "critério"` | LLM-as-judge, para o que é semântico |
 | `judge: { criteria, mustNot }` | idem, com condição proibida |
+| `apiCall: { to, times, bodyContains }` | a jornada chamou a API externa como deveria |
+| `noApiCall: "DELETE /x/*"` | a jornada **não** chamou este endpoint |
 
 O texto avaliado inclui os títulos dos botões/lista (`[opções: 09:00 | 14:00]`), então dá para
 asseverar sobre o que a IA ofereceu, não só sobre o que ela escreveu.
@@ -94,6 +96,62 @@ asseverar sobre o que a IA ofereceu, não só sobre o que ela escreveu.
 **Determinístico primeiro.** É grátis, instantâneo e não tem falso negativo. `judge` só onde a
 resposta é livre — cada asserção dessas é uma chamada de LLM. Rubrica específica ("confirmou o
 agendamento repetindo data e horário") produz muito menos ruído que rubrica vaga ("respondeu bem").
+
+### Spy das conexões API da jornada
+
+Asserção de texto só enxerga o que a IA escreve. Se a jornada chama o CRM errado — ou não
+chama nada — e responde algo plausível, o teste passa. O spy fecha esse buraco usando o mesmo
+truque do graph sink: finge ser a API externa.
+
+Aponte a base URL da API, no ambiente de teste da vonex.ai, para `http://127.0.0.1:4030`
+(`API_SPY_HOST`/`API_SPY_PORT`), e declare no cenário:
+
+```yaml
+apiSpy:
+  stubs:
+    - match: GET /agenda/horarios          # `MÉTODO /caminho`, com * de curinga
+      respond:
+        body:
+          horarios:
+            - { id: "h_0900", inicio: "2026-06-12T09:00" }
+
+    - match: POST /agenda/consultas
+      respond:
+        status: 201
+        body: { id: 987, status: "confirmada" }
+        delayMs: 200                       # opcional: simula API lenta
+
+steps:
+  - user: "o das 9 tá ótimo"
+    expect:
+      - contains: "confirmada"
+      - apiCall:
+          to: POST /agenda/consultas
+          times: 1                          # número exato, ou { min, max }
+          bodyContains:                     # subconjunto: campo extra não quebra
+            paciente_cpf: "123.456.789-00"
+            horario_id: "h_0900"
+      - noApiCall: DELETE /agenda/*
+```
+
+Isso pega três bugs que passavam batido:
+
+| Bug | Como aparece |
+|---|---|
+| A IA diz "agendado!" mas não agendou | `apiCall` falha com *nenhuma chamada à API* enquanto `contains` passa |
+| Chamou com payload errado | `apiCall` falha com *payload não bate*, mostrando o que foi enviado |
+| Chamou duas vezes | `times: 1` falha com *2 chamada(s)* |
+
+Os `stubs` dão **determinismo** de brinde: a jornada recebe sempre a mesma resposta, então o
+cenário para de depender do estado do banco de teste. Chamada sem stub recebe `200 {}` e um
+aviso no log — fica registrada, nunca silenciosa.
+
+As chamadas aparecem no relatório (`⇢ api POST /agenda/consultas {...}`), o que costuma ser a
+informação que explica por que a IA respondeu aquilo. `authorization`, `x-api-key` e `cookie`
+são redigidos antes de qualquer coisa ir para o relatório ou para o JSON.
+
+Escopo: `apiCall`/`noApiCall` num `step` olham as chamadas **daquele turno**; no `expect` da
+persona, olham a conversa inteira.
 
 ### Briefing do projeto
 
@@ -216,12 +274,12 @@ quebrou o fluxo. `--continue-on-failure` roda tudo mesmo assim.
 
 ## Limitações conhecidas
 
-- **Não valida as conexões API da jornada.** As asserções enxergam só o que a IA responde no
-  WhatsApp. Se a jornada chama uma API externa (CRM, agenda) e a chamada sai errada mas a
-  resposta ao cliente fica plausível, o teste passa. Cobrir isso pede um spy nas chamadas
-  externas — próximo passo natural.
 - **Cloud API precisa de template para abrir conversa.** Fora da janela de 24h a Meta exige
   template aprovado; sem ele o primeiro `sendText` volta com erro 131047.
 - **Persona não é determinística** (ver acima).
 - **Sink não simula falha da Meta.** Ele sempre responde 200. Testar retry/erro de envio da
   plataforma exigiria modo de injeção de falha.
+- **Um cenário por vez.** Sink e spy usam porta fixa, então rodar cenários em paralelo exigiria
+  alocação de porta por cenário.
+- **O spy cobre HTTP.** Integração por fila, webhook de saída ou banco direto não é
+  interceptada.

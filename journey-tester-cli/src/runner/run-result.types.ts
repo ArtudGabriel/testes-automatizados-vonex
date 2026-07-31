@@ -1,3 +1,4 @@
+import type { RecordedApiCall } from '../capture/api-spy.server';
 import type { OutboundMessage } from '../shared/whatsapp.types';
 
 export type AssertionKind =
@@ -6,7 +7,9 @@ export type AssertionKind =
   | 'matches'
   | 'judge'
   | 'maxLatencyMs'
-  | 'messageCount';
+  | 'messageCount'
+  | 'apiCall'
+  | 'noApiCall';
 
 export interface AssertionResult {
   kind: AssertionKind;
@@ -23,6 +26,8 @@ export interface TurnResult {
   /** true quando o turno foi o clique num botão, não texto digitado. */
   isOptionReply: boolean;
   botMessages: OutboundMessage[];
+  /** Chamadas que a jornada fez à API externa durante este turno. */
+  apiCalls: RecordedApiCall[];
   latencyMs: number;
   timedOut: boolean;
   assertions: AssertionResult[];

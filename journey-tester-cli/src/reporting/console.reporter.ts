@@ -48,6 +48,13 @@ export function reportTurn(turn: TurnResult): void {
     ),
   );
 
+  // Mostrar sempre as chamadas: é o que explica por que a IA respondeu aquilo.
+  for (const call of turn.apiCalls) {
+    const body = call.body === undefined ? '' : ` ${JSON.stringify(call.body)}`;
+    const stub = call.matchedStub ? '' : pc.yellow(' (sem stub)');
+    out(pc.dim(`      ⇢ api  ${call.method} ${call.path}${truncate(body, 200)}`) + stub);
+  }
+
   for (const assertion of turn.assertions) {
     reportAssertion(assertion, '      ');
   }

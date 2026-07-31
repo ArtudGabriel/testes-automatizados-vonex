@@ -20,6 +20,10 @@ const envSchema = z.object({
   WHATSAPP_BUSINESS_ACCOUNT_ID: z.string().default('200000000000000'),
   WHATSAPP_DISPLAY_PHONE_NUMBER: z.string().default('5511900000000'),
 
+  // Spy das APIs externas que a jornada consome (CRM, agenda, ERP)
+  API_SPY_HOST: z.string().default('127.0.0.1'),
+  API_SPY_PORT: z.coerce.number().int().positive().default(4030),
+
   // Adapter cloud-api (canal real, número oficial da Meta)
   CLOUD_API_BASE_URL: z.string().url().default('https://graph.facebook.com/v21.0'),
   CLOUD_API_TOKEN: z.string().optional(),

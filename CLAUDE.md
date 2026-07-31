@@ -43,6 +43,7 @@ scenario.yaml ─▶ runner ─▶ adapter ─▶ jornada na vonex.ai
 | **Adapter `http` como padrão** | A jornada roda na vonex.ai, então dá para injetar o payload de webhook direto nela: determinístico, roda em CI, não gasta conversa com a Meta. Não cobre o canal em si. |
 | **Graph sink** | A vonex.ai responde chamando a Cloud API de forma assíncrona — sem interceptar, o runner nunca veria a resposta. O sink finge ser o `graph.facebook.com`. Exige apontar a base URL da Cloud API do ambiente de teste para ele; se já é env var, zero mudança de código na plataforma. |
 | **Adapter `cloud-api`** | Canal real. Custa por conversa e exige template aprovado para abrir a janela de 24h. Smoke test, não suíte de CI. |
+| **API spy + stubs** | Mesmo truque do sink, aplicado às APIs que a jornada consome. Sem ele a asserção só vê o texto: jornada que responde "agendado!" sem chamar a agenda passa no teste. Os stubs ainda dão determinismo — a jornada para de depender do estado do banco de teste. Cobre só HTTP; fila e banco direto ficam de fora. |
 | **Playwright no WhatsApp Web — recusado** | Frágil (DOM da Meta muda), risco de ban, manutenção infinita. |
 | **Asserção em 3 níveis** | Resposta de LLM é não-determinística. `contains`/`matches`/`maxLatencyMs` para o objetivo; `judge` (LLM-as-judge com rubrica) para o semântico. Judge sozinho é caro e ruidoso; determinístico sozinho não cobre. |
 | **Modo `persona` com arquétipos** | Roteiro fixo só testa o caminho feliz. LLM no papel de cliente caça o que roteiro não pega. Catálogo fechado de arquétipos (`ideal`, `confused`, `angry`, `wants-human`, `impatient`, `indecisive`, `distrustful`, `boundary-tester`) em vez de texto livre: cada um estressa a jornada por um ângulo diferente e é comparável entre implantações. `description` livre continua disponível para o que não cabe no catálogo. Em troca, não é determinístico — exploração, não regressão. |
@@ -69,23 +70,27 @@ scenario.yaml ─▶ runner ─▶ adapter ─▶ jornada na vonex.ai
 ### Escopo da sessão atual
 
 Entregue: CLI runner, dois adapters, graph sink, asserções determinísticas + judge, modo
-persona com catálogo de arquétipos, briefing de projeto compartilhável, reporters
-console/JSON, 69 testes unitários.
+persona com catálogo de arquétipos, briefing de projeto compartilhável, spy + stubs das APIs
+externas, reporters console/JSON, workflow de CI, 98 testes unitários.
 
 Próximos, na ordem de valor:
 
-1. **Spy nas conexões API da jornada** — hoje as asserções só enxergam o que a IA responde no
-   WhatsApp. Se a jornada chama o CRM errado mas responde algo plausível, o teste passa. É o
-   maior buraco de cobertura.
+1. **Primeira rodada real contra a vonex.ai** — nada rodou contra a plataforma de verdade
+   ainda, só contra uma plataforma falsa. Judge, persona e o adapter `cloud-api` continuam
+   sem execução real (falta `ANTHROPIC_API_KEY` e número de teste).
 2. Modo de injeção de falha no sink (testar retry da plataforma).
-3. `journey-tester-api` + `journey-tester-web` para histórico e dashboard.
+3. Execução paralela de cenários (hoje sink e spy usam porta fixa).
+4. `journey-tester-api` + `journey-tester-web` para histórico e dashboard.
 
 ### Particularidades / pegadinhas
 
 - **Assinatura do webhook:** se a vonex.ai valida `X-Hub-Signature-256`, `WHATSAPP_APP_SECRET`
   precisa bater com o app secret dela, senão tudo volta 401.
 - **Base URL da Cloud API** precisa ser configurável por ambiente na vonex.ai. É o único
-  pré-requisito do adapter `http` do lado da plataforma.
+  pré-requisito do adapter `http` do lado da plataforma. O mesmo vale para a base URL das
+  APIs externas da jornada, se for usar o `apiSpy`.
+- **Credencial em header nunca entra no relatório:** `authorization`, `x-api-key` e `cookie`
+  são redigidos no spy antes de qualquer coisa ser gravada.
 - **Janela de 24h:** no adapter `cloud-api`, a primeira mensagem fora da janela volta com erro
   131047 da Meta. Precisa de template aprovado.
 - **Não usar o número business pessoal** como número de teste automatizado.
