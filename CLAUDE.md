@@ -44,7 +44,8 @@ scenario.yaml ─▶ runner ─▶ adapter ─▶ jornada na vonex.ai
 | **Graph sink** | A vonex.ai responde chamando a Cloud API de forma assíncrona — sem interceptar, o runner nunca veria a resposta. O sink finge ser o `graph.facebook.com`. Exige apontar a base URL da Cloud API do ambiente de teste para ele; se já é env var, zero mudança de código na plataforma. |
 | **Adapter `cloud-api`** | Canal real. Custa por conversa e exige template aprovado para abrir a janela de 24h. Smoke test, não suíte de CI. |
 | **API spy + stubs** | Mesmo truque do sink, aplicado às APIs que a jornada consome. Sem ele a asserção só vê o texto: jornada que responde "agendado!" sem chamar a agenda passa no teste. Os stubs ainda dão determinismo — a jornada para de depender do estado do banco de teste. Cobre só HTTP; fila e banco direto ficam de fora. |
-| **Adapter `z-api`** | Caminho quando **não dá para reconfigurar a vonex.ai** — que é o caso real do time. Um chip comum automatizado conversa com o número do bot: a jornada receptiva vê um cliente de verdade, sem template e sem janela de 24h, e a plataforma não é tocada. Em troca, API fora do ToS do WhatsApp, com risco de ban do chip conectado (aceito explicitamente pelo time) e sessão que cai. Captura por polling do chat, o que dispensa túnel público. |
+| **Adapters não-oficiais (`z-api`, `evolution`, `uazapi`)** | Caminho quando **não dá para reconfigurar a vonex.ai** — que é o caso real do time. Um chip comum automatizado conversa com o número do bot: a jornada receptiva vê um cliente de verdade, sem template e sem janela de 24h, e a plataforma não é tocada. Em troca, API fora do ToS do WhatsApp, com risco de ban do chip conectado (aceito explicitamente pelo time) e sessão que cai. Captura por polling do chat, o que dispensa túnel público. |
+| **Um adapter, três perfis de provedor** | Os três provedores fazem a mesma coisa com contratos HTTP diferentes. Um adapter por provedor triplicaria a lógica de polling, watermark e normalização. O perfil (`src/adapters/unofficial/provider.profile.ts`) declara só o que difere: auth, caminhos e corpo. Provedor novo é um bloco de config; contrato divergente se corrige por env, sem tocar em código. |
 | **Playwright no WhatsApp Web — recusado** | Frágil (DOM da Meta muda), risco de ban, manutenção infinita. A Z-API cobre o mesmo caso com contrato de API estável em vez de DOM. |
 | **Asserção em 3 níveis** | Resposta de LLM é não-determinística. `contains`/`matches`/`maxLatencyMs` para o objetivo; `judge` (LLM-as-judge com rubrica) para o semântico. Judge sozinho é caro e ruidoso; determinístico sozinho não cobre. |
 | **Modo `persona` com arquétipos** | Roteiro fixo só testa o caminho feliz. LLM no papel de cliente caça o que roteiro não pega. Catálogo fechado de arquétipos (`ideal`, `confused`, `angry`, `wants-human`, `impatient`, `indecisive`, `distrustful`, `boundary-tester`) em vez de texto livre: cada um estressa a jornada por um ângulo diferente e é comparável entre implantações. `description` livre continua disponível para o que não cabe no catálogo. Em troca, não é determinístico — exploração, não regressão. |
@@ -65,17 +66,17 @@ scenario.yaml ─▶ runner ─▶ adapter ─▶ jornada na vonex.ai
 - **vonex.ai** — recebe o webhook simulado (`PLATFORM_WEBHOOK_URL`) e envia a resposta pela
   Cloud API (interceptada pelo sink). Ambiente de **teste**, nunca produção do cliente.
 - **WhatsApp Cloud API (Meta)** — adapter `cloud-api`, número de teste dedicado.
-- **Z-API** — adapter `z-api`, chip de teste automatizado. API não-oficial; não exige nada da
-  vonex.ai, e é o caminho quando a plataforma não pode ser reconfigurada.
+- **Z-API / Evolution API / Uazapi** — adapters não-oficiais, chip de teste automatizado. Não
+  exigem nada da vonex.ai, e são o caminho quando a plataforma não pode ser reconfigurada.
 - **Claude API** — judge e persona (`claude-opus-5`, structured outputs). Só exigida por
   cenários que usam `judge` ou `persona`.
 
 ### Escopo da sessão atual
 
-Entregue: CLI runner, três adapters, graph sink, asserções determinísticas + judge, modo
+Entregue: CLI runner, cinco adapters (um deles com três perfis de provedor), graph sink, asserções determinísticas + judge, modo
 persona com catálogo de arquétipos, briefing de projeto compartilhável, spy + stubs das APIs
 externas, comando `doctor` de pré-voo, reporters console/JSON/JUnit, workflow de CI,
-122 testes unitários.
+136 testes unitários.
 
 Próximos, na ordem de valor:
 
@@ -100,9 +101,15 @@ Próximos, na ordem de valor:
 - **Não usar o número business pessoal** como número de teste automatizado. No adapter
   `z-api` isso é crítico: o risco de ban recai sobre o chip conectado, então usar o número de
   trabalho significa perder a ferramenta de trabalho junto.
-- **Shape da Z-API varia** entre webhook e endpoint de chat, e entre versões. O normalizador
-  (`src/shared/z-api.types.ts`) tolera as grafias conhecidas; divergência nova se corrige ali,
-  num lugar só.
+- **Shape varia entre provedores e versões.** São dois formatos: o plano da Z-API e o envelope
+  Baileys do Evolution/Uazapi. O normalizador (`src/shared/unofficial-message.ts`) tolera as
+  grafias conhecidas; divergência nova se corrige ali, num lugar só.
+- **Nunca use o relógio do provedor como hora de chegada.** O `messageTimestamp` do Baileys vem
+  em segundos: usá-lo como `receivedAt` produz latência negativa e faz `maxLatencyMs` passar
+  falsamente. `receivedAt` é hora de observação; o relógio do provedor fica em
+  `providerTimestamp`, só para deduplicar.
+- **Latência no modo `poll` é cota superior**, não medida exata: inclui até um intervalo de
+  polling. Para medir latência de verdade, use o adapter `http` ou captura por webhook.
 - **`knownData` do briefing vai para a plataforma e para o modelo** — só dado fictício ali.
 - **Arquétipo novo entra no catálogo** (`src/persona/archetypes.ts`), não como `description`
   copiada entre cenários: o valor está em ser comparável entre implantações.

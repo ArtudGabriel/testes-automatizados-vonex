@@ -24,15 +24,21 @@ const envSchema = z.object({
   API_SPY_HOST: z.string().default('127.0.0.1'),
   API_SPY_PORT: z.coerce.number().int().positive().default(4030),
 
-  // Adapter z-api (chip de teste automatizado via API não-oficial)
-  Z_API_BASE_URL: z.string().url().default('https://api.z-api.io'),
-  Z_API_INSTANCE: z.string().optional(),
-  Z_API_TOKEN: z.string().optional(),
-  Z_API_CLIENT_TOKEN: z.string().optional(),
+  // Adapters não-oficiais (z-api | evolution | uazapi) — chip de teste
+  WA_PROVIDER_BASE_URL: z.string().url().default('https://api.z-api.io'),
+  WA_PROVIDER_INSTANCE: z.string().optional(),
+  WA_PROVIDER_TOKEN: z.string().optional(),
+  /** Z-API: Client-Token da conta. Ignorado nos outros provedores. */
+  WA_PROVIDER_CLIENT_TOKEN: z.string().optional(),
   /** `poll` dispensa túnel público; `webhook` é mais rápido mas exige exposição. */
-  Z_API_CAPTURE: z.enum(['poll', 'webhook']).default('poll'),
-  Z_API_POLL_MS: z.coerce.number().int().positive().default(1_500),
-  Z_API_POLL_AMOUNT: z.coerce.number().int().positive().max(100).default(20),
+  WA_PROVIDER_CAPTURE: z.enum(['poll', 'webhook']).default('poll'),
+  WA_PROVIDER_POLL_MS: z.coerce.number().int().positive().default(1_500),
+  WA_PROVIDER_POLL_AMOUNT: z.coerce.number().int().positive().max(100).default(20),
+  // Escapes: se o contrato do provedor divergir do perfil embutido, corrige-se
+  // aqui sem tocar em código.
+  WA_PROVIDER_SEND_PATH: z.string().optional(),
+  WA_PROVIDER_FETCH_PATH: z.string().optional(),
+  WA_PROVIDER_AUTH_HEADER: z.string().optional(),
 
   // Adapter cloud-api (canal real, número oficial da Meta)
   CLOUD_API_BASE_URL: z.string().url().default('https://graph.facebook.com/v21.0'),

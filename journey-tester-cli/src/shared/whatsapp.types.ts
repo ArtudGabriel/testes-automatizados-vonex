@@ -20,7 +20,14 @@ export interface OutboundMessage {
   text: string;
   options: OutboundOption[];
   to: string;
+  /**
+   * Quando o runner **observou** a mensagem. É o que mede latência — nunca use
+   * o relógio do provedor aqui: ele vem em segundos em alguns provedores, o que
+   * produz latência negativa e faria `maxLatencyMs` passar falsamente.
+   */
   receivedAt: number;
+  /** Relógio do provedor, quando existe. Serve para ordenar e deduplicar. */
+  providerTimestamp?: number;
   raw: unknown;
 }
 

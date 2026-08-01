@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import axios from 'axios';
 import { getConfig } from '../config/env.config';
+import { UNOFFICIAL_PROVIDERS } from '../adapters/unofficial/provider.profile';
 import type { LoadedScenario } from '../scenario/scenario.loader';
 
 export type CheckStatus = 'ok' | 'warn' | 'fail';
@@ -31,8 +32,11 @@ export async function runDoctor(scenarios: LoadedScenario[]): Promise<CheckResul
     checks.push(await checkPort('graph sink', config.GRAPH_SINK_HOST, config.GRAPH_SINK_PORT));
   }
 
-  if (adapters.has('z-api')) {
-    checks.push(checkZApi(config));
+  const unofficial = [...adapters].filter((name) =>
+    (UNOFFICIAL_PROVIDERS as readonly string[]).includes(name),
+  );
+  if (unofficial.length > 0) {
+    checks.push(checkUnofficial(config, unofficial.join(', ')));
   }
 
   const usesApiSpy = scenarios.some((scenario) => scenario.spec.apiSpy);
@@ -160,11 +164,15 @@ function checkCloudApi(
   };
 }
 
-function checkZApi(config: ReturnType<typeof getConfig>): CheckResult {
+function checkUnofficial(
+  config: ReturnType<typeof getConfig>,
+  providers: string,
+): CheckResult {
+  const name = `adapter ${providers}`;
   const missing = (
     [
-      ['Z_API_INSTANCE', config.Z_API_INSTANCE],
-      ['Z_API_TOKEN', config.Z_API_TOKEN],
+      ['WA_PROVIDER_TOKEN', config.WA_PROVIDER_TOKEN],
+      ['WA_PROVIDER_INSTANCE', config.WA_PROVIDER_INSTANCE],
       ['BOT_PHONE_NUMBER', config.BOT_PHONE_NUMBER],
     ] as const
   )
@@ -173,26 +181,26 @@ function checkZApi(config: ReturnType<typeof getConfig>): CheckResult {
 
   if (missing.length > 0) {
     return {
-      name: 'adapter z-api',
+      name,
       status: 'fail',
       detail: `faltando: ${missing.join(', ')}`,
-      hint: 'pegue instância e token no painel da Z-API; BOT_PHONE_NUMBER é o número da jornada',
+      hint: 'instância e token vêm do painel do provedor; BOT_PHONE_NUMBER é o número da jornada',
     };
   }
 
-  if (config.Z_API_CAPTURE === 'webhook') {
+  if (config.WA_PROVIDER_CAPTURE === 'webhook') {
     return {
-      name: 'adapter z-api',
+      name,
       status: 'warn',
       detail: 'captura por webhook',
-      hint: `exponha ${config.INBOUND_WEBHOOK_HOST}:${config.INBOUND_WEBHOOK_PORT} publicamente e cadastre em "Ao receber" na Z-API`,
+      hint: `exponha ${config.INBOUND_WEBHOOK_HOST}:${config.INBOUND_WEBHOOK_PORT} publicamente e cadastre no provedor`,
     };
   }
 
   return {
-    name: 'adapter z-api',
+    name,
     status: 'ok',
-    detail: `captura por polling a cada ${config.Z_API_POLL_MS}ms (sem túnel)`,
+    detail: `captura por polling a cada ${config.WA_PROVIDER_POLL_MS}ms (sem túnel) em ${config.WA_PROVIDER_BASE_URL}`,
   };
 }
 
@@ -209,16 +217,16 @@ export function platformReminders(scenarios: LoadedScenario[]): string[] {
   const adapters = new Set(scenarios.map((scenario) => scenario.spec.adapter ?? 'http'));
   const reminders: string[] = [];
 
-  // O adapter z-api não exige nada da plataforma — é o ponto dele.
+  // Os adapters não-oficiais não exigem nada da plataforma — é o ponto deles.
   if (adapters.has('http') || scenarios.length === 0) {
     reminders.push(
       `base URL da Cloud API na vonex.ai (ambiente de teste) → http://${config.GRAPH_SINK_HOST}:${config.GRAPH_SINK_PORT}`,
     );
   }
 
-  if (adapters.has('z-api')) {
+  if ([...adapters].some((name) => (UNOFFICIAL_PROVIDERS as readonly string[]).includes(name))) {
     reminders.push(
-      'chip de teste conectado na Z-API (QR lido) e nunca o número de trabalho',
+      'chip de teste conectado no provedor (QR lido) e nunca o número de trabalho',
     );
   }
 

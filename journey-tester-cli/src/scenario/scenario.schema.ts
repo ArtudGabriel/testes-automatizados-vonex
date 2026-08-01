@@ -3,7 +3,7 @@ import { archetypeIds } from '../persona/archetypes';
 import { apiCallAssertionSchema, apiSpySchema } from './api-spy.schema';
 import { projectSchema } from './project.schema';
 
-export const ADAPTER_NAMES = ['http', 'z-api', 'cloud-api'] as const;
+export const ADAPTER_NAMES = ['http', 'z-api', 'evolution', 'uazapi', 'cloud-api'] as const;
 export type AdapterName = (typeof ADAPTER_NAMES)[number];
 
 const judgeSchema = z.union([

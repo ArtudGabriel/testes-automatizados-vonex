@@ -3,14 +3,16 @@ import type { AdapterName } from '../scenario/scenario.schema';
 import type { ChannelAdapter } from './channel.adapter';
 import { CloudApiChannelAdapter } from './cloud-api.adapter';
 import { HttpChannelAdapter } from './http.adapter';
-import { ZApiChannelAdapter } from './z-api.adapter';
+import { UnofficialChannelAdapter } from './unofficial/unofficial.adapter';
 
 export function createAdapter(name: AdapterName, config: AppConfig): ChannelAdapter {
   switch (name) {
     case 'http':
       return new HttpChannelAdapter(config);
     case 'z-api':
-      return new ZApiChannelAdapter(config);
+    case 'evolution':
+    case 'uazapi':
+      return new UnofficialChannelAdapter(name, config);
     case 'cloud-api':
       return new CloudApiChannelAdapter(config);
     default: {

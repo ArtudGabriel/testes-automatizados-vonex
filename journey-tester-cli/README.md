@@ -23,49 +23,66 @@ A plataforma responde ao cliente chamando a Cloud API da Meta de forma assíncro
 **graph sink** finge ser o `graph.facebook.com` e captura essa chamada — sem ele o runner
 mandaria a mensagem e nunca veria a resposta.
 
-### Os três adapters
+### Os adapters
 
-| | `http` | `z-api` | `cloud-api` |
+| | `http` | `z-api` · `evolution` · `uazapi` | `cloud-api` |
 |---|---|---|---|
 | Como injeta | payload de webhook direto na vonex.ai | chip de teste via API não-oficial | número de teste na Cloud API oficial |
 | Como captura | graph sink local | polling do chat (ou webhook) | webhook do número de teste |
 | **Exige mexer na plataforma** | **sim** (base URL da Cloud API) | **não** | **não** |
 | Túnel público | não | não (no modo `poll`) | sim |
 | Template p/ abrir conversa | n/a | não | **sim** (erro 131047 sem ele) |
-| Custo | zero | mensalidade da Z-API | por conversa |
+| Custo | zero | mensalidade do provedor | por conversa |
 | Roda em CI | sim | sim | não |
 | Risco | nenhum | **ban do chip** (API fora do ToS) | nenhum |
 | Quando usar | quando dá para configurar a plataforma | quando não dá | smoke test do canal antes do go-live |
 
-Trocar de adapter não muda o cenário: `--adapter z-api` roda o mesmo YAML por outro caminho.
+Trocar de adapter não muda o cenário: `--adapter evolution` roda o mesmo YAML por outro caminho.
 
 **Escolhendo:** se você consegue apontar a base URL da Cloud API da vonex.ai para o sink, use
-`http` — é grátis, determinístico e sem risco. Se não consegue mexer na plataforma, `z-api` é
-o caminho: a jornada receptiva recebe exatamente o que receberia de um cliente real, sem
-template e sem janela de 24h. O preço é usar uma API fora dos termos do WhatsApp, com risco de
-banimento do número conectado — **use um chip dedicado, nunca o número de trabalho**.
+`http` — é grátis, determinístico e sem risco. Se não consegue mexer na plataforma, um dos
+adapters não-oficiais é o caminho: a jornada receptiva recebe exatamente o que receberia de um
+cliente real, sem template e sem janela de 24h. O preço é usar uma API fora dos termos do
+WhatsApp, com risco de banimento do número conectado — **use um chip dedicado, nunca o número
+de trabalho**.
 
-### Setup do adapter `z-api`
+### Setup dos adapters não-oficiais
 
-Não exige nada da vonex.ai. No `.env`:
+Os três provedores fazem a mesma coisa com contratos HTTP diferentes, então o adapter é um só
+e o que muda é o **perfil**. A configuração é a mesma para todos:
 
 ```bash
-Z_API_INSTANCE=<instância no painel da Z-API>
-Z_API_TOKEN=<token da instância>
-Z_API_CLIENT_TOKEN=<token de segurança da conta, se ativado>
+WA_PROVIDER_BASE_URL=<https://api.z-api.io | http://localhost:8080 | https://x.uazapi.com>
+WA_PROVIDER_INSTANCE=<instância no painel do provedor>
+WA_PROVIDER_TOKEN=<z-api: token da instância · evolution: apikey · uazapi: token>
 BOT_PHONE_NUMBER=<número oficial onde a jornada está publicada>
-Z_API_CAPTURE=poll        # dispensa túnel; use `webhook` se quiser latência menor
+WA_PROVIDER_CAPTURE=poll   # dispensa túnel; `webhook` dá latência menor
 ```
 
-No painel da Z-API, conecte o chip de teste lendo o QR. Só isso.
+E no cenário (ou via `--adapter`):
 
-No modo `poll` o runner consulta o chat a cada 1,5s e agrupa as mensagens do turno — mais
-simples de operar, sem expor porta. No modo `webhook` você precisa expor
-`INBOUND_WEBHOOK_PORT` publicamente (ngrok, cloudflared) e cadastrar a URL em "Ao receber".
+```yaml
+adapter: evolution      # ou z-api, ou uazapi
+```
 
-> O normalizador de mensagens da Z-API (`src/shared/z-api.types.ts`) aceita as variações
-> conhecidas de nome de campo entre webhook e endpoint de chat. Se a sua instância devolver um
-> shape diferente, é o único arquivo a ajustar.
+No painel do provedor, conecte o chip de teste lendo o QR. Só isso — nada muda na vonex.ai.
+
+**Perfis embutidos** (o que cada provedor espera):
+
+| | Auth | Envio | Leitura |
+|---|---|---|---|
+| `z-api` | instância+token no caminho, `client-token` opcional | `POST /send-text` | `GET /chat-messages/{phone}` |
+| `evolution` | header `apikey` | `POST /message/sendText/{instância}` | `POST /chat/findMessages/{instância}` |
+| `uazapi` | header `token` | `POST /send/text` | `POST /message/find` |
+
+> **Se o contrato do seu provedor divergir**, ajuste por env em vez de mexer em código:
+> `WA_PROVIDER_SEND_PATH`, `WA_PROVIDER_FETCH_PATH`, `WA_PROVIDER_AUTH_HEADER`. O normalizador
+> de mensagens (`src/shared/unofficial-message.ts`) entende o formato plano da Z-API e o
+> envelope Baileys do Evolution/Uazapi, com as variações conhecidas de nome de campo.
+
+**Latência no modo `poll`:** o valor medido inclui até um intervalo de polling (1,5s por
+padrão). Se o cenário usa `maxLatencyMs` com folga curta, reduza `WA_PROVIDER_POLL_MS` ou use
+`WA_PROVIDER_CAPTURE=webhook` — no `http` a medição é exata, aqui é uma cota superior.
 
 ## Antes da primeira rodada: `doctor`
 
