@@ -71,7 +71,8 @@ scenario.yaml ─▶ runner ─▶ adapter ─▶ jornada na vonex.ai
 
 Entregue: CLI runner, dois adapters, graph sink, asserções determinísticas + judge, modo
 persona com catálogo de arquétipos, briefing de projeto compartilhável, spy + stubs das APIs
-externas, reporters console/JSON, workflow de CI, 98 testes unitários.
+externas, comando `doctor` de pré-voo, reporters console/JSON/JUnit, workflow de CI,
+106 testes unitários.
 
 Próximos, na ordem de valor:
 
@@ -106,8 +107,10 @@ Próximos, na ordem de valor:
 ```bash
 cd journey-tester-cli
 npm install && cp .env.example .env
+npm run dev -- doctor scenarios/       # checa config antes de rodar
 npm run dev -- run scenarios/agendamento-consulta.yaml
 npm run dev -- validate scenarios/
+npm run dev -- personas -v
 npm test && npm run typecheck
 ```
 

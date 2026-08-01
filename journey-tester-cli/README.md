@@ -36,6 +36,30 @@ mandaria a mensagem e nunca veria a resposta.
 
 Trocar de adapter não muda o cenário: `--adapter cloud-api` roda o mesmo YAML no canal real.
 
+## Antes da primeira rodada: `doctor`
+
+A maioria das falhas de estreia é configuração, e todas se manifestam do mesmo jeito inútil —
+"a IA não respondeu". O `doctor` checa antes:
+
+```bash
+npm run dev -- doctor scenarios/
+```
+
+```text
+✓ PLATFORM_WEBHOOK_URL: http://localhost:3000/webhooks/whatsapp respondeu 200
+✓ porta do graph sink: 127.0.0.1:4020 livre
+✗ ANTHROPIC_API_KEY: 5 cenário(s) usam judge ou persona, mas a chave não está definida
+    → defina ANTHROPIC_API_KEY no .env, ou rode só cenários determinísticos
+
+Do lado da vonex.ai (teste), confira:
+  · base URL da Cloud API na vonex.ai (ambiente de teste) → http://127.0.0.1:4020
+  · base URL das APIs externas da jornada → http://127.0.0.1:4030
+```
+
+Exit code 1 se algo bloqueia. E se o cenário rodar mas o sink não receber nada em turno
+nenhum, o runner avisa explicitamente que a base URL provavelmente não está apontada — em vez
+de deixar você achando que a jornada travou.
+
 ## Setup do adapter `http`
 
 Duas variáveis fazem o trabalho:
@@ -258,7 +282,9 @@ ferramenta de exploração, não de regressão. Não use persona como gate de CI
 
 ```bash
 npm run dev -- run scenarios/                       # roda a pasta inteira
-npm run dev -- run scenarios/x.yaml --json out.json # relatório para CI
+npm run dev -- doctor scenarios/                    # pré-voo da configuração
+npm run dev -- run scenarios/x.yaml --json out.json # relatório para histórico
+npm run dev -- run scenarios/ --junit results.xml   # relatório que o CI renderiza
 npm run dev -- run scenarios/ --adapter cloud-api   # canal real
 npm run dev -- run scenarios/x.yaml --continue-on-failure
 npm run dev -- validate scenarios/                  # valida YAML sem chamar nada

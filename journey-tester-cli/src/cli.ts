@@ -1,7 +1,10 @@
 #!/usr/bin/env node
+import pc from 'picocolors';
 import { Command } from 'commander';
 import { createAdapter } from './adapters/adapter.factory';
 import { getConfig } from './config/env.config';
+import { platformReminders, runDoctor, type CheckResult } from './diagnostics/doctor';
+import { writeJunitReport } from './reporting/junit.reporter';
 import {
   reportScenarioHeader,
   reportScenarioResult,
@@ -20,6 +23,7 @@ import { logger, setLogLevel, type LogLevel } from './shared/logger';
 interface RunCommandOptions {
   adapter?: AdapterName;
   json?: string;
+  junit?: string;
   continueOnFailure: boolean;
   logLevel: LogLevel;
 }
@@ -39,6 +43,7 @@ program
     `sobrescreve o adapter do cenário (${ADAPTER_NAMES.join(' | ')})`,
   )
   .option('-j, --json <file>', 'grava o relatório em JSON')
+  .option('--junit <file>', 'grava o relatório em JUnit XML (para o CI renderizar)')
   .option('--continue-on-failure', 'não para o cenário no primeiro turno que falhar', false)
   .option('-l, --log-level <level>', 'silent | error | warn | info | debug', 'info')
   .action(async (paths: string[], options: RunCommandOptions) => {
@@ -96,8 +101,63 @@ program
     if (options.json) {
       writeJsonReport(summary, options.json);
     }
+    if (options.junit) {
+      writeJunitReport(summary, options.junit);
+    }
 
     process.exitCode = summary.failed > 0 ? 1 : 0;
+  });
+
+program
+  .command('doctor')
+  .description('checa a configuração antes de rodar contra a plataforma de verdade')
+  .argument('[paths...]', 'cenários a considerar nas checagens')
+  .action(async (paths: string[]) => {
+    let scenarios: ReturnType<typeof loadScenarios> = [];
+
+    try {
+      if (paths.length > 0) scenarios = loadScenarios(paths);
+    } catch (error) {
+      logger.error((error as Error).message);
+      process.exitCode = 2;
+      return;
+    }
+
+    let checks: CheckResult[];
+    try {
+      checks = await runDoctor(scenarios);
+    } catch (error) {
+      logger.error((error as Error).message);
+      process.exitCode = 2;
+      return;
+    }
+
+    const marker: Record<CheckResult['status'], string> = {
+      ok: pc.green('✓'),
+      warn: pc.yellow('!'),
+      fail: pc.red('✗'),
+    };
+
+    process.stdout.write('\n');
+    for (const check of checks) {
+      process.stdout.write(`${marker[check.status]} ${check.name}: ${check.detail}\n`);
+      if (check.hint) {
+        process.stdout.write(`    ${pc.dim(`→ ${check.hint}`)}\n`);
+      }
+    }
+
+    process.stdout.write(`\n${pc.bold('Do lado da vonex.ai (teste), confira:')}\n`);
+    for (const reminder of platformReminders(scenarios)) {
+      process.stdout.write(`  · ${reminder}\n`);
+    }
+
+    const failed = checks.filter((check) => check.status === 'fail').length;
+    process.stdout.write(
+      failed === 0
+        ? `\n${pc.green('tudo pronto para rodar')}\n`
+        : `\n${pc.red(`${failed} problema(s) bloqueiam a execução`)}\n`,
+    );
+    process.exitCode = failed > 0 ? 1 : 0;
   });
 
 program

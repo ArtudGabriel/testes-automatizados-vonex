@@ -66,6 +66,8 @@ export class ScenarioRunner {
       this.apiSpy = undefined;
     }
 
+    warnIfNothingCaptured(result);
+
     result.durationMs = Date.now() - startedAt;
     result.passed =
       result.error === undefined &&
@@ -252,6 +254,23 @@ export class ScenarioRunner {
       passed: !params.reply.timedOut && assertions.every((assertion) => assertion.passed),
     };
   }
+}
+
+/**
+ * "A IA não respondeu" tem duas causas muito diferentes: a jornada travou, ou
+ * o sink nunca foi ligado. Sem esta dica, a primeira rodada real vira caça ao
+ * fantasma.
+ */
+function warnIfNothingCaptured(result: ScenarioResult): void {
+  if (result.error !== undefined || result.turns.length === 0) return;
+
+  const capturedNothing = result.turns.every((turn) => turn.botMessages.length === 0);
+  if (!capturedNothing) return;
+
+  logger.warn(
+    'nenhuma mensagem chegou ao graph sink em todo o cenário — a base URL da Cloud API no ' +
+      'ambiente de teste da vonex.ai está apontada para o sink? (rode `journey-tester doctor`)',
+  );
 }
 
 export function buildTranscript(turns: TurnResult[]): string {
