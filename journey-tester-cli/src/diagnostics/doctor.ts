@@ -23,8 +23,17 @@ export async function runDoctor(scenarios: LoadedScenario[]): Promise<CheckResul
   const config = getConfig();
   const checks: CheckResult[] = [];
 
-  checks.push(await checkWebhook(config.PLATFORM_WEBHOOK_URL));
-  checks.push(await checkPort('graph sink', config.GRAPH_SINK_HOST, config.GRAPH_SINK_PORT));
+  const adapters = new Set(scenarios.map((scenario) => scenario.spec.adapter ?? 'http'));
+  const usesHttp = adapters.has('http') || scenarios.length === 0;
+
+  if (usesHttp) {
+    checks.push(await checkWebhook(config.PLATFORM_WEBHOOK_URL));
+    checks.push(await checkPort('graph sink', config.GRAPH_SINK_HOST, config.GRAPH_SINK_PORT));
+  }
+
+  if (adapters.has('z-api')) {
+    checks.push(checkZApi(config));
+  }
 
   const usesApiSpy = scenarios.some((scenario) => scenario.spec.apiSpy);
   if (usesApiSpy || scenarios.length === 0) {
@@ -151,6 +160,42 @@ function checkCloudApi(
   };
 }
 
+function checkZApi(config: ReturnType<typeof getConfig>): CheckResult {
+  const missing = (
+    [
+      ['Z_API_INSTANCE', config.Z_API_INSTANCE],
+      ['Z_API_TOKEN', config.Z_API_TOKEN],
+      ['BOT_PHONE_NUMBER', config.BOT_PHONE_NUMBER],
+    ] as const
+  )
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+
+  if (missing.length > 0) {
+    return {
+      name: 'adapter z-api',
+      status: 'fail',
+      detail: `faltando: ${missing.join(', ')}`,
+      hint: 'pegue instância e token no painel da Z-API; BOT_PHONE_NUMBER é o número da jornada',
+    };
+  }
+
+  if (config.Z_API_CAPTURE === 'webhook') {
+    return {
+      name: 'adapter z-api',
+      status: 'warn',
+      detail: 'captura por webhook',
+      hint: `exponha ${config.INBOUND_WEBHOOK_HOST}:${config.INBOUND_WEBHOOK_PORT} publicamente e cadastre em "Ao receber" na Z-API`,
+    };
+  }
+
+  return {
+    name: 'adapter z-api',
+    status: 'ok',
+    detail: `captura por polling a cada ${config.Z_API_POLL_MS}ms (sem túnel)`,
+  };
+}
+
 function usesLlm(scenario: LoadedScenario): boolean {
   if (scenario.spec.persona) return true;
   return (scenario.spec.steps ?? []).some((step) =>
@@ -161,9 +206,21 @@ function usesLlm(scenario: LoadedScenario): boolean {
 /** Lembretes do que precisa estar configurado do lado da plataforma. */
 export function platformReminders(scenarios: LoadedScenario[]): string[] {
   const config = getConfig();
-  const reminders = [
-    `base URL da Cloud API na vonex.ai (ambiente de teste) → http://${config.GRAPH_SINK_HOST}:${config.GRAPH_SINK_PORT}`,
-  ];
+  const adapters = new Set(scenarios.map((scenario) => scenario.spec.adapter ?? 'http'));
+  const reminders: string[] = [];
+
+  // O adapter z-api não exige nada da plataforma — é o ponto dele.
+  if (adapters.has('http') || scenarios.length === 0) {
+    reminders.push(
+      `base URL da Cloud API na vonex.ai (ambiente de teste) → http://${config.GRAPH_SINK_HOST}:${config.GRAPH_SINK_PORT}`,
+    );
+  }
+
+  if (adapters.has('z-api')) {
+    reminders.push(
+      'chip de teste conectado na Z-API (QR lido) e nunca o número de trabalho',
+    );
+  }
 
   if (scenarios.some((scenario) => scenario.spec.apiSpy)) {
     reminders.push(
@@ -171,7 +228,8 @@ export function platformReminders(scenarios: LoadedScenario[]): string[] {
     );
   }
 
-  if (!config.WHATSAPP_APP_SECRET) {
+  // Só o adapter http assina o webhook; nos outros a assinatura não existe.
+  if ((adapters.has('http') || scenarios.length === 0) && !config.WHATSAPP_APP_SECRET) {
     reminders.push(
       'WHATSAPP_APP_SECRET vazio: se a vonex.ai valida X-Hub-Signature-256, tudo volta 401',
     );

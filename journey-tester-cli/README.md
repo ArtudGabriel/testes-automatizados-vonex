@@ -23,18 +23,49 @@ A plataforma responde ao cliente chamando a Cloud API da Meta de forma assíncro
 **graph sink** finge ser o `graph.facebook.com` e captura essa chamada — sem ele o runner
 mandaria a mensagem e nunca veria a resposta.
 
-### Os dois adapters
+### Os três adapters
 
-| | `http` (padrão) | `cloud-api` |
-|---|---|---|
-| Como injeta | POST do payload de webhook direto na vonex.ai | número de teste na Cloud API oficial |
-| Como captura | graph sink local | webhook do número de teste (precisa de túnel público) |
-| Custo | zero | conversa cobrada pela Meta + template aprovado para abrir a janela de 24h |
-| Roda em CI | sim | não |
-| Cobre o canal real | não (entrega, template, mídia ficam de fora) | sim |
-| Quando usar | dia a dia, regressão, CI | smoke test antes do go-live |
+| | `http` | `z-api` | `cloud-api` |
+|---|---|---|---|
+| Como injeta | payload de webhook direto na vonex.ai | chip de teste via API não-oficial | número de teste na Cloud API oficial |
+| Como captura | graph sink local | polling do chat (ou webhook) | webhook do número de teste |
+| **Exige mexer na plataforma** | **sim** (base URL da Cloud API) | **não** | **não** |
+| Túnel público | não | não (no modo `poll`) | sim |
+| Template p/ abrir conversa | n/a | não | **sim** (erro 131047 sem ele) |
+| Custo | zero | mensalidade da Z-API | por conversa |
+| Roda em CI | sim | sim | não |
+| Risco | nenhum | **ban do chip** (API fora do ToS) | nenhum |
+| Quando usar | quando dá para configurar a plataforma | quando não dá | smoke test do canal antes do go-live |
 
-Trocar de adapter não muda o cenário: `--adapter cloud-api` roda o mesmo YAML no canal real.
+Trocar de adapter não muda o cenário: `--adapter z-api` roda o mesmo YAML por outro caminho.
+
+**Escolhendo:** se você consegue apontar a base URL da Cloud API da vonex.ai para o sink, use
+`http` — é grátis, determinístico e sem risco. Se não consegue mexer na plataforma, `z-api` é
+o caminho: a jornada receptiva recebe exatamente o que receberia de um cliente real, sem
+template e sem janela de 24h. O preço é usar uma API fora dos termos do WhatsApp, com risco de
+banimento do número conectado — **use um chip dedicado, nunca o número de trabalho**.
+
+### Setup do adapter `z-api`
+
+Não exige nada da vonex.ai. No `.env`:
+
+```bash
+Z_API_INSTANCE=<instância no painel da Z-API>
+Z_API_TOKEN=<token da instância>
+Z_API_CLIENT_TOKEN=<token de segurança da conta, se ativado>
+BOT_PHONE_NUMBER=<número oficial onde a jornada está publicada>
+Z_API_CAPTURE=poll        # dispensa túnel; use `webhook` se quiser latência menor
+```
+
+No painel da Z-API, conecte o chip de teste lendo o QR. Só isso.
+
+No modo `poll` o runner consulta o chat a cada 1,5s e agrupa as mensagens do turno — mais
+simples de operar, sem expor porta. No modo `webhook` você precisa expor
+`INBOUND_WEBHOOK_PORT` publicamente (ngrok, cloudflared) e cadastrar a URL em "Ao receber".
+
+> O normalizador de mensagens da Z-API (`src/shared/z-api.types.ts`) aceita as variações
+> conhecidas de nome de campo entre webhook e endpoint de chat. Se a sua instância devolver um
+> shape diferente, é o único arquivo a ajustar.
 
 ## Antes da primeira rodada: `doctor`
 

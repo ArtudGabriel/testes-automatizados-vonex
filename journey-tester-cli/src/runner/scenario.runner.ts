@@ -267,9 +267,14 @@ function warnIfNothingCaptured(result: ScenarioResult): void {
   const capturedNothing = result.turns.every((turn) => turn.botMessages.length === 0);
   if (!capturedNothing) return;
 
+  const cause =
+    result.adapter === 'http'
+      ? 'a base URL da Cloud API no ambiente de teste da vonex.ai está apontada para o sink?'
+      : 'o número do bot está certo e o chip de teste continua conectado?';
+
   logger.warn(
-    'nenhuma mensagem chegou ao graph sink em todo o cenário — a base URL da Cloud API no ' +
-      'ambiente de teste da vonex.ai está apontada para o sink? (rode `journey-tester doctor`)',
+    `nenhuma resposta foi capturada em todo o cenário — ${cause} ` +
+      '(rode `journey-tester doctor`)',
   );
 }
 

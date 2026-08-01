@@ -44,7 +44,8 @@ scenario.yaml ─▶ runner ─▶ adapter ─▶ jornada na vonex.ai
 | **Graph sink** | A vonex.ai responde chamando a Cloud API de forma assíncrona — sem interceptar, o runner nunca veria a resposta. O sink finge ser o `graph.facebook.com`. Exige apontar a base URL da Cloud API do ambiente de teste para ele; se já é env var, zero mudança de código na plataforma. |
 | **Adapter `cloud-api`** | Canal real. Custa por conversa e exige template aprovado para abrir a janela de 24h. Smoke test, não suíte de CI. |
 | **API spy + stubs** | Mesmo truque do sink, aplicado às APIs que a jornada consome. Sem ele a asserção só vê o texto: jornada que responde "agendado!" sem chamar a agenda passa no teste. Os stubs ainda dão determinismo — a jornada para de depender do estado do banco de teste. Cobre só HTTP; fila e banco direto ficam de fora. |
-| **Playwright no WhatsApp Web — recusado** | Frágil (DOM da Meta muda), risco de ban, manutenção infinita. |
+| **Adapter `z-api`** | Caminho quando **não dá para reconfigurar a vonex.ai** — que é o caso real do time. Um chip comum automatizado conversa com o número do bot: a jornada receptiva vê um cliente de verdade, sem template e sem janela de 24h, e a plataforma não é tocada. Em troca, API fora do ToS do WhatsApp, com risco de ban do chip conectado (aceito explicitamente pelo time) e sessão que cai. Captura por polling do chat, o que dispensa túnel público. |
+| **Playwright no WhatsApp Web — recusado** | Frágil (DOM da Meta muda), risco de ban, manutenção infinita. A Z-API cobre o mesmo caso com contrato de API estável em vez de DOM. |
 | **Asserção em 3 níveis** | Resposta de LLM é não-determinística. `contains`/`matches`/`maxLatencyMs` para o objetivo; `judge` (LLM-as-judge com rubrica) para o semântico. Judge sozinho é caro e ruidoso; determinístico sozinho não cobre. |
 | **Modo `persona` com arquétipos** | Roteiro fixo só testa o caminho feliz. LLM no papel de cliente caça o que roteiro não pega. Catálogo fechado de arquétipos (`ideal`, `confused`, `angry`, `wants-human`, `impatient`, `indecisive`, `distrustful`, `boundary-tester`) em vez de texto livre: cada um estressa a jornada por um ângulo diferente e é comparável entre implantações. `description` livre continua disponível para o que não cabe no catálogo. Em troca, não é determinístico — exploração, não regressão. |
 | **Briefing do projeto obrigatório na persona** | Sem saber o que a jornada faz, o cliente simulado improvisa: inventa CPF quando pedem identificação e insiste em pedido fora do escopo. `projectFile` compartilha o briefing entre os cenários da implantação; `outOfScope` também vai para o judge, que passa a tratar recusa educada como acerto. |
@@ -64,15 +65,17 @@ scenario.yaml ─▶ runner ─▶ adapter ─▶ jornada na vonex.ai
 - **vonex.ai** — recebe o webhook simulado (`PLATFORM_WEBHOOK_URL`) e envia a resposta pela
   Cloud API (interceptada pelo sink). Ambiente de **teste**, nunca produção do cliente.
 - **WhatsApp Cloud API (Meta)** — adapter `cloud-api`, número de teste dedicado.
+- **Z-API** — adapter `z-api`, chip de teste automatizado. API não-oficial; não exige nada da
+  vonex.ai, e é o caminho quando a plataforma não pode ser reconfigurada.
 - **Claude API** — judge e persona (`claude-opus-5`, structured outputs). Só exigida por
   cenários que usam `judge` ou `persona`.
 
 ### Escopo da sessão atual
 
-Entregue: CLI runner, dois adapters, graph sink, asserções determinísticas + judge, modo
+Entregue: CLI runner, três adapters, graph sink, asserções determinísticas + judge, modo
 persona com catálogo de arquétipos, briefing de projeto compartilhável, spy + stubs das APIs
 externas, comando `doctor` de pré-voo, reporters console/JSON/JUnit, workflow de CI,
-106 testes unitários.
+122 testes unitários.
 
 Próximos, na ordem de valor:
 
@@ -94,7 +97,12 @@ Próximos, na ordem de valor:
   são redigidos no spy antes de qualquer coisa ser gravada.
 - **Janela de 24h:** no adapter `cloud-api`, a primeira mensagem fora da janela volta com erro
   131047 da Meta. Precisa de template aprovado.
-- **Não usar o número business pessoal** como número de teste automatizado.
+- **Não usar o número business pessoal** como número de teste automatizado. No adapter
+  `z-api` isso é crítico: o risco de ban recai sobre o chip conectado, então usar o número de
+  trabalho significa perder a ferramenta de trabalho junto.
+- **Shape da Z-API varia** entre webhook e endpoint de chat, e entre versões. O normalizador
+  (`src/shared/z-api.types.ts`) tolera as grafias conhecidas; divergência nova se corrige ali,
+  num lugar só.
 - **`knownData` do briefing vai para a plataforma e para o modelo** — só dado fictício ali.
 - **Arquétipo novo entra no catálogo** (`src/persona/archetypes.ts`), não como `description`
   copiada entre cenários: o valor está em ser comparável entre implantações.

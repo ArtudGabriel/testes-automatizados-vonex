@@ -24,6 +24,16 @@ const envSchema = z.object({
   API_SPY_HOST: z.string().default('127.0.0.1'),
   API_SPY_PORT: z.coerce.number().int().positive().default(4030),
 
+  // Adapter z-api (chip de teste automatizado via API não-oficial)
+  Z_API_BASE_URL: z.string().url().default('https://api.z-api.io'),
+  Z_API_INSTANCE: z.string().optional(),
+  Z_API_TOKEN: z.string().optional(),
+  Z_API_CLIENT_TOKEN: z.string().optional(),
+  /** `poll` dispensa túnel público; `webhook` é mais rápido mas exige exposição. */
+  Z_API_CAPTURE: z.enum(['poll', 'webhook']).default('poll'),
+  Z_API_POLL_MS: z.coerce.number().int().positive().default(1_500),
+  Z_API_POLL_AMOUNT: z.coerce.number().int().positive().max(100).default(20),
+
   // Adapter cloud-api (canal real, número oficial da Meta)
   CLOUD_API_BASE_URL: z.string().url().default('https://graph.facebook.com/v21.0'),
   CLOUD_API_TOKEN: z.string().optional(),
