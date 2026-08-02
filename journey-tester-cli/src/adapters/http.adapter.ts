@@ -1,7 +1,9 @@
 import { createHmac } from 'node:crypto';
 import axios, { type AxiosInstance } from 'axios';
 import type { AppConfig } from '../config/env.config';
-import { GraphSinkServer, type SinkDelivery } from '../capture/graph-sink.server';
+import type { GraphSinkServer, SinkDelivery } from '../capture/graph-sink.server';
+import { acquireSink, releaseSink } from '../capture/sink.pool';
+import { sameNumber } from '../shared/phone.util';
 import { logger } from '../shared/logger';
 import { buildInboundWebhook, type InboundContact } from '../shared/whatsapp.types';
 import type {
@@ -24,7 +26,7 @@ export class HttpChannelAdapter implements ChannelAdapter {
   readonly name = 'http';
 
   private readonly collector = new MessageCollector();
-  private readonly sink: GraphSinkServer;
+  private sink?: GraphSinkServer;
   private readonly http: AxiosInstance;
   private unsubscribe?: () => void;
   private contact?: InboundContact;
@@ -36,11 +38,6 @@ export class HttpChannelAdapter implements ChannelAdapter {
       );
     }
 
-    this.sink = new GraphSinkServer({
-      host: config.GRAPH_SINK_HOST,
-      port: config.GRAPH_SINK_PORT,
-    });
-
     this.http = axios.create({
       timeout: 15_000,
       validateStatus: () => true,
@@ -49,9 +46,20 @@ export class HttpChannelAdapter implements ChannelAdapter {
 
   async open(context: ConversationContext): Promise<void> {
     this.contact = context.contact;
-    this.sink.setFaults(context.sinkFaults ?? []);
-    await this.sink.start();
-    this.unsubscribe = this.sink.onMessage((message) => this.collector.push(message));
+
+    // O sink é compartilhado: a porta está configurada na vonex.ai e não pode
+    // variar por cenário. Cada adapter fica só com o que é do seu contato.
+    const sink = await acquireSink({
+      host: this.config.GRAPH_SINK_HOST,
+      port: this.config.GRAPH_SINK_PORT,
+    });
+    this.sink = sink;
+
+    if (context.sinkFaults?.length) sink.setFaults(context.sinkFaults);
+
+    this.unsubscribe = sink.onMessage((message) => {
+      if (this.isMine(message.to)) this.collector.push(message);
+    });
     this.collector.reset();
   }
 
@@ -83,19 +91,34 @@ export class HttpChannelAdapter implements ChannelAdapter {
   async close(): Promise<void> {
     this.unsubscribe?.();
     this.unsubscribe = undefined;
-    await this.sink.stop();
+
+    const sink = this.sink;
+    this.sink = undefined;
+    if (sink) await releaseSink(sink);
   }
 
   deliveryCount(): number {
-    return this.sink.deliveryCount;
+    return this.sink?.deliveryCount ?? 0;
   }
 
   deliveriesSince(marker: number): SinkDelivery[] {
-    return this.sink.deliveriesSince(marker);
+    return (this.sink?.deliveriesSince(marker) ?? []).filter((delivery) =>
+      this.isMine(delivery.to),
+    );
   }
 
   allDeliveries(): SinkDelivery[] {
-    return this.sink.allDeliveries();
+    return (this.sink?.allDeliveries() ?? []).filter((delivery) => this.isMine(delivery.to));
+  }
+
+  /**
+   * Mensagem endereçada ao contato deste cenário. Sem destinatário reconhecível
+   * a mensagem é aceita: é melhor um cenário sozinho funcionar do que exigir
+   * que a plataforma devolva o número no formato que esperamos.
+   */
+  private isMine(to: string): boolean {
+    if (!to.trim()) return true;
+    return sameNumber(to, this.requireContact().phone);
   }
 
   private async deliver(payload: Record<string, unknown>): Promise<void> {

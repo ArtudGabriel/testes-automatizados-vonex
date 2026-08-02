@@ -12,7 +12,9 @@ import {
   reportTurn,
 } from './reporting/console.reporter';
 import { writeJsonReport } from './reporting/json.reporter';
+import { planConcurrency } from './runner/concurrency.plan';
 import { summarize, type ScenarioResult } from './runner/run-result.types';
+import { runInPool } from './runner/scenario.pool';
 import { ScenarioRunner } from './runner/scenario.runner';
 import { PERSONA_ARCHETYPES } from './persona/archetypes';
 import { describePersona } from './persona/persona.simulator';
@@ -25,6 +27,7 @@ interface RunCommandOptions {
   json?: string;
   junit?: string;
   continueOnFailure: boolean;
+  concurrency: string;
   logLevel: LogLevel;
 }
 
@@ -45,6 +48,7 @@ program
   .option('-j, --json <file>', 'grava o relatório em JSON')
   .option('--junit <file>', 'grava o relatório em JUnit XML (para o CI renderizar)')
   .option('--continue-on-failure', 'não para o cenário no primeiro turno que falhar', false)
+  .option('-c, --concurrency <n>', 'quantos cenários rodam ao mesmo tempo (só adapter http)', '1')
   .option('-l, --log-level <level>', 'silent | error | warn | info | debug', 'info')
   .action(async (paths: string[], options: RunCommandOptions) => {
     setLogLevel(options.logLevel);
@@ -69,27 +73,59 @@ program
         return;
       }
 
-      for (const scenario of scenarios) {
+      const requested = Number.parseInt(options.concurrency, 10);
+      if (!Number.isFinite(requested) || requested < 1) {
+        logger.error(`--concurrency inválido: ${options.concurrency}`);
+        process.exitCode = 2;
+        return;
+      }
+
+      const plan = planConcurrency({
+        scenarios,
+        requested,
+        defaultAdapter: config.DEFAULT_ADAPTER,
+        ...(options.adapter ? { override: options.adapter } : {}),
+      });
+
+      if (plan.reason) {
+        logger.warn(`rodando um cenário por vez: ${plan.reason}`);
+      }
+
+      const runOne = async (scenario: (typeof scenarios)[number]): Promise<ScenarioResult> => {
         const adapterName: AdapterName =
           options.adapter ?? scenario.spec.adapter ?? config.DEFAULT_ADAPTER;
-        reportScenarioHeader({
+
+        const header = {
           name: scenario.spec.name,
           adapter: adapterName,
           ...(scenario.spec.persona
             ? { persona: describePersona(scenario.spec.persona) }
             : {}),
           ...(scenario.project ? { project: scenario.project.name } : {}),
-        });
+        };
+
+        // Em paralelo, streamar turno a turno embaralharia a saída de cenários
+        // diferentes: o bloco inteiro só é impresso quando o cenário fecha.
+        const streaming = plan.concurrency === 1;
+        if (streaming) reportScenarioHeader(header);
 
         const runner = new ScenarioRunner(createAdapter(adapterName, config), {
           stopOnFailure: !options.continueOnFailure,
-          onTurn: reportTurn,
+          ...(streaming ? { onTurn: reportTurn } : {}),
         });
 
         const result = await runner.run(scenario);
+
+        if (!streaming) {
+          reportScenarioHeader(header);
+          for (const turn of result.turns) reportTurn(turn);
+        }
         reportScenarioResult(result);
-        results.push(result);
-      }
+
+        return result;
+      };
+
+      results.push(...(await runInPool(scenarios, plan.concurrency, runOne)));
     } catch (error) {
       logger.error((error as Error).message);
       process.exitCode = 2;

@@ -430,6 +430,7 @@ npm run dev -- doctor scenarios/                    # pré-voo da configuração
 npm run dev -- run scenarios/x.yaml --json out.json # relatório para histórico
 npm run dev -- run scenarios/ --junit results.xml   # relatório que o CI renderiza
 npm run dev -- run scenarios/ --adapter cloud-api   # canal real
+npm run dev -- run scenarios/ -c 4                  # até 4 cenários ao mesmo tempo
 npm run dev -- run scenarios/x.yaml --continue-on-failure
 npm run dev -- validate scenarios/                  # valida YAML sem chamar nada
 npm run dev -- personas                             # lista os tipos de cliente
@@ -439,6 +440,27 @@ npm test                                            # unit
 
 Por padrão o cenário para no primeiro turno que falha — turno 3 não diz nada se o turno 1
 quebrou o fluxo. `--continue-on-failure` roda tudo mesmo assim.
+
+### Rodando cenários em paralelo (`-c`)
+
+Paralelismo aqui não é questão de porta, é de identidade. O sink é um só — a porta está
+configurada na base URL da Cloud API da vonex.ai e não pode variar por cenário —, então
+cenários simultâneos dividem o mesmo servidor e **cada um fica com as mensagens do seu
+contato**. É por isso que `-c` só vale quando dá para separar quem é quem:
+
+| Situação | Por quê |
+|---|---|
+| adapter não-oficial ou `cloud-api` | é um chip/número só; as conversas se misturariam no mesmo chat |
+| cenário com `apiSpy` | a chamada que chega no spy não diz de qual cenário veio |
+| cenário com `sinkFaults` | o sink é compartilhado: a falha cairia na entrega do vizinho |
+| contatos repetidos | o roteamento é pelo destinatário; as respostas cairiam no cenário errado |
+
+Em qualquer um desses casos o runner **cai para 1 e diz por quê** — cenário embaralhado em
+silêncio é pior que suíte lenta. Dê contatos diferentes aos cenários da mesma suíte e eles
+paralelizam.
+
+Em paralelo a saída não é streamada turno a turno: o bloco de cada cenário sai inteiro quando
+ele fecha, e a ordem do relatório final é a dos arquivos, não a de quem terminou primeiro.
 
 `stdout` é só o relatório; log vai para `stderr`. `--json` é pipeável.
 
@@ -453,7 +475,7 @@ quebrou o fluxo. `--continue-on-failure` roda tudo mesmo assim.
   quando um cenário com `sinkFaults` cairia num adapter sem sink.
 - **`sinkRetries` conta reenvio, não backoff.** O intervalo entre as tentativas fica no
   relatório (`receivedAt` de cada entrega), mas não há asserção sobre ele.
-- **Um cenário por vez.** Sink e spy usam porta fixa, então rodar cenários em paralelo exigiria
-  alocação de porta por cenário.
+- **Paralelismo só entre cenários `http` com contatos distintos** (ver `-c`). Suíte com
+  `apiSpy`, `sinkFaults` ou adapter de chip roda em série.
 - **O spy cobre HTTP.** Integração por fila, webhook de saída ou banco direto não é
   interceptada.

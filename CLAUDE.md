@@ -44,6 +44,7 @@ scenario.yaml ─▶ runner ─▶ adapter ─▶ jornada na vonex.ai
 | **Adapter `http`** (não usado neste projeto) | A jornada roda na vonex.ai, então dá para injetar o payload de webhook direto nela: determinístico, roda em CI, não gasta conversa com a Meta. Não cobre o canal em si. |
 | **Graph sink** | A vonex.ai responde chamando a Cloud API de forma assíncrona — sem interceptar, o runner nunca veria a resposta. O sink finge ser o `graph.facebook.com`. Exige apontar a base URL da Cloud API do ambiente de teste para ele; se já é env var, zero mudança de código na plataforma. |
 | **Adapter `cloud-api`** | Canal real. Custa por conversa e exige template aprovado para abrir a janela de 24h. Smoke test, não suíte de CI. |
+| **Sink compartilhado, roteado por contato** | A porta do sink está na configuração da vonex.ai: não pode variar por cenário. Então cenários simultâneos dividem o servidor e cada adapter filtra pelo destinatário. É o que torna `-c` possível — e o que limita: sem contato distinto, sem paralelismo. |
 | **Injeção de falha no sink** | Em produção a Cloud API falha (rate limit, 500, janela de 24h). Jornada que não trata isso deixa o cliente sem resposta, e teste nenhum pega: do nosso lado tudo pareceu bem. `sinkFaults` recusa a entrega de propósito e `sinkRetries` assevera o reenvio. Entrega recusada não conta como mensagem do turno — ela não chegou ao cliente. Só vale no adapter `http`. |
 | **API spy + stubs** | Mesmo truque do sink, aplicado às APIs que a jornada consome. Sem ele a asserção só vê o texto: jornada que responde "agendado!" sem chamar a agenda passa no teste. Os stubs ainda dão determinismo — a jornada para de depender do estado do banco de teste. Cobre só HTTP; fila e banco direto ficam de fora. |
 | **Adapters não-oficiais (`z-api`, `evolution`, `uazapi`)** | Caminho quando **não dá para reconfigurar a vonex.ai** — que é o caso real do time. Um chip comum automatizado conversa com o número do bot: a jornada receptiva vê um cliente de verdade, sem template e sem janela de 24h, e a plataforma não é tocada. Em troca, API fora do ToS do WhatsApp, com risco de ban do chip conectado (aceito explicitamente pelo time) e sessão que cai. Captura por polling do chat, o que dispensa túnel público. |
@@ -81,15 +82,15 @@ Entregue: CLI runner, cinco adapters (um deles com três perfis de provedor), gr
 injeção de falha da Meta, asserções determinísticas + judge, modo
 persona com catálogo de arquétipos, briefing de projeto compartilhável, spy + stubs das APIs
 externas, abertura de janela por template no `cloud-api`, comando `doctor` de pré-voo,
-reporters console/JSON/JUnit, workflow de CI, 191 testes unitários.
+reporters console/JSON/JUnit, execução paralela com guardas, workflow de CI,
+219 testes unitários.
 
 Próximos, na ordem de valor:
 
 1. **Primeira rodada real contra a vonex.ai** — nada rodou contra a plataforma de verdade
    ainda, só contra uma plataforma falsa. Judge, persona e o adapter `cloud-api` continuam
    sem execução real (falta `ANTHROPIC_API_KEY` e número de teste).
-2. Execução paralela de cenários (hoje sink e spy usam porta fixa).
-3. `journey-tester-api` + `journey-tester-web` para histórico e dashboard.
+2. `journey-tester-api` + `journey-tester-web` para histórico e dashboard.
 
 ### Particularidades / pegadinhas
 
@@ -115,6 +116,9 @@ Próximos, na ordem de valor:
   em segundos: usá-lo como `receivedAt` produz latência negativa e faz `maxLatencyMs` passar
   falsamente. `receivedAt` é hora de observação; o relógio do provedor fica em
   `providerTimestamp`, só para deduplicar.
+- **`-c` (paralelo) exige contato diferente por cenário.** O sink roteia pelo destinatário; dois
+  cenários com o mesmo número trocariam respostas. `apiSpy`, `sinkFaults` e adapters de chip
+  também caem para 1. Em todo caso o runner avisa por que reduziu — nunca embaralha em silêncio.
 - **`sinkFaults` só funciona no adapter `http`.** O default do projeto é `evolution`, então um
   cenário que injeta falha e esquece o `adapter: http` herdaria transporte sem sink e passaria
   verde sem ter testado nada. O schema barra o adapter errado declarado; o `doctor` pega o
