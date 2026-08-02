@@ -138,6 +138,30 @@ Duas variáveis fazem o trabalho:
 Se a plataforma valida `X-Hub-Signature-256`, preencha `WHATSAPP_APP_SECRET` com o mesmo app
 secret — o runner assina o payload, senão a plataforma devolve 401.
 
+## Setup do adapter `cloud-api`
+
+Como número business, o tester **não pode iniciar conversa com texto livre**: fora da janela de
+24h a Meta recusa com erro 131047. Só um template aprovado abre.
+
+```bash
+CLOUD_API_OPEN_TEMPLATE=abertura_teste      # nome do template aprovado
+CLOUD_API_OPEN_TEMPLATE_LANG=pt_BR
+CLOUD_API_OPEN_TEMPLATE_PARAMS=Maria|Clínica   # vazio se o template não tem variável
+CLOUD_API_OPEN_TIMEOUT_MS=30000
+```
+
+O adapter manda o template antes da primeira mensagem do cenário e espera o bot responder — é
+a resposta dele que abre a janela de fato. **Essa resposta é handshake e não entra no
+relatório:** o cenário começa na primeira mensagem declarada nos `steps`, sem herdar a saudação
+que o template disparou.
+
+Se a janela fechar no meio do cenário (o bot demorou mais de 24h, o que só acontece em teste
+manual esquecido), o adapter reabre com o template e reenvia a mensagem uma vez. Sem template
+configurado ele não reenvia: seria outra mensagem cobrada para receber o mesmo 131047.
+
+Template com variável exige `components`; template sem variável **recusa** `components` e volta
+132000. Por isso `CLOUD_API_OPEN_TEMPLATE_PARAMS` vazio significa nenhum `components` no envio.
+
 ## Anatomia de um cenário
 
 ```yaml
@@ -420,8 +444,9 @@ quebrou o fluxo. `--continue-on-failure` roda tudo mesmo assim.
 
 ## Limitações conhecidas
 
-- **Cloud API precisa de template para abrir conversa.** Fora da janela de 24h a Meta exige
-  template aprovado; sem ele o primeiro `sendText` volta com erro 131047.
+- **Cloud API precisa de template aprovado para abrir conversa** — o adapter manda o template
+  (`CLOUD_API_OPEN_TEMPLATE`), mas aprovar o template na Meta é trabalho manual, fora daqui.
+  A resposta do bot ao template é descartada, então o texto dela não é asseverável.
 - **Persona não é determinística** (ver acima).
 - **Injeção de falha só no adapter `http`.** É onde existe sink. Nos adapters não-oficiais e no
   `cloud-api` a plataforma fala com a Meta de verdade, e não há o que injetar — `doctor` avisa

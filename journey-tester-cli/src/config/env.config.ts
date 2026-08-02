@@ -53,6 +53,13 @@ const envSchema = z.object({
   CLOUD_API_TOKEN: z.string().optional(),
   TESTER_PHONE_NUMBER_ID: z.string().optional(),
   BOT_PHONE_NUMBER: z.string().optional(),
+  /** Template aprovado que abre a janela de 24h. Sem ele, o primeiro envio dá 131047. */
+  CLOUD_API_OPEN_TEMPLATE: z.string().optional(),
+  CLOUD_API_OPEN_TEMPLATE_LANG: z.string().default('pt_BR'),
+  /** Variáveis do corpo do template, na ordem, separadas por `|`. */
+  CLOUD_API_OPEN_TEMPLATE_PARAMS: z.string().optional(),
+  /** Quanto esperar a resposta ao template antes de tentar texto livre. */
+  CLOUD_API_OPEN_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   INBOUND_WEBHOOK_PORT: z.coerce.number().int().positive().default(4021),
   INBOUND_WEBHOOK_HOST: z.string().default('0.0.0.0'),
   INBOUND_VERIFY_TOKEN: z.string().default('journey-tester'),

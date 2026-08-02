@@ -204,10 +204,21 @@ function checkCloudApi(
     };
   }
 
+  if (!config.CLOUD_API_OPEN_TEMPLATE) {
+    return {
+      name: 'adapter cloud-api',
+      status: 'warn',
+      detail: 'sem CLOUD_API_OPEN_TEMPLATE',
+      hint: 'fora da janela de 24h a Meta recusa a primeira mensagem (131047); só template aprovado abre',
+    };
+  }
+
   return {
     name: 'adapter cloud-api',
     status: 'warn',
-    detail: `${usingCloudApi.length} cenário(s) vão gastar conversa cobrada pela Meta`,
+    detail:
+      `${usingCloudApi.length} cenário(s) vão gastar conversa cobrada pela Meta ` +
+      `(abertura pelo template "${config.CLOUD_API_OPEN_TEMPLATE}")`,
     hint: 'o webhook de entrada precisa estar exposto publicamente (túnel) e registrado no app',
   };
 }

@@ -80,17 +80,16 @@ scenario.yaml ─▶ runner ─▶ adapter ─▶ jornada na vonex.ai
 Entregue: CLI runner, cinco adapters (um deles com três perfis de provedor), graph sink com
 injeção de falha da Meta, asserções determinísticas + judge, modo
 persona com catálogo de arquétipos, briefing de projeto compartilhável, spy + stubs das APIs
-externas, comando `doctor` de pré-voo, reporters console/JSON/JUnit, workflow de CI,
-182 testes unitários.
+externas, abertura de janela por template no `cloud-api`, comando `doctor` de pré-voo,
+reporters console/JSON/JUnit, workflow de CI, 191 testes unitários.
 
 Próximos, na ordem de valor:
 
 1. **Primeira rodada real contra a vonex.ai** — nada rodou contra a plataforma de verdade
    ainda, só contra uma plataforma falsa. Judge, persona e o adapter `cloud-api` continuam
    sem execução real (falta `ANTHROPIC_API_KEY` e número de teste).
-2. Abertura de janela por template no adapter `cloud-api` (hoje só existe o aviso do 131047).
-3. Execução paralela de cenários (hoje sink e spy usam porta fixa).
-4. `journey-tester-api` + `journey-tester-web` para histórico e dashboard.
+2. Execução paralela de cenários (hoje sink e spy usam porta fixa).
+3. `journey-tester-api` + `journey-tester-web` para histórico e dashboard.
 
 ### Particularidades / pegadinhas
 
@@ -102,7 +101,10 @@ Próximos, na ordem de valor:
 - **Credencial em header nunca entra no relatório:** `authorization`, `x-api-key` e `cookie`
   são redigidos no spy antes de qualquer coisa ser gravada.
 - **Janela de 24h:** no adapter `cloud-api`, a primeira mensagem fora da janela volta com erro
-  131047 da Meta. Precisa de template aprovado.
+  131047 da Meta. `CLOUD_API_OPEN_TEMPLATE` manda o template aprovado antes do primeiro texto e
+  espera o bot responder — é a resposta dele que abre a janela. Essa resposta é handshake e não
+  entra no relatório. Template com variável exige `components`; sem variável, `components` volta
+  132000 — daí `CLOUD_API_OPEN_TEMPLATE_PARAMS` vazio significar nenhum `components`.
 - **Não usar o número business pessoal** como número de teste automatizado. No adapter
   `z-api` isso é crítico: o risco de ban recai sobre o chip conectado, então usar o número de
   trabalho significa perder a ferramenta de trabalho junto.
