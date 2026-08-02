@@ -1,0 +1,41 @@
+# Evolution API para o chip de teste — não é infra de produção, é bancada.
+#
+#   docker compose up -d
+#   → painel em http://localhost:8080/manager (use AUTHENTICATION_API_KEY)
+#
+# Depois: crie a instância, leia o QR com o CHIP DE TESTE (nunca o número de
+# trabalho — o risco de ban recai sobre o número conectado) e ponha a mesma
+# chave em WA_PROVIDER_TOKEN no .env.
+
+services:
+  evolution-api:
+    image: atendai/evolution-api:v2.1.1
+    container_name: journey-tester-evolution
+    restart: unless-stopped
+    ports:
+      - '8080:8080'
+    environment:
+      # Chave que autentica as chamadas do runner (header `apikey`).
+      # Troque por qualquer segredo seu — precisa bater com WA_PROVIDER_TOKEN.
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-troque-esta-chave}
+
+      # Sessão persistida em volume: reiniciar o container não pede QR de novo.
+      DATABASE_ENABLED: 'false'
+      CACHE_REDIS_ENABLED: 'false'
+      CACHE_LOCAL_ENABLED: 'true'
+
+      # O runner captura por polling (WA_PROVIDER_CAPTURE=poll), então não é
+      # preciso configurar webhook nem expor porta pública.
+      WEBHOOK_GLOBAL_ENABLED: 'false'
+
+      # Silencia log de mensagem no console do container.
+      LOG_LEVEL: ERROR
+      DEL_INSTANCE: 'false'
+      QRCODE_LIMIT: '10'
+    volumes:
+      - evolution_instances:/evolution/instances
+      - evolution_store:/evolution/store
+
+volumes:
+  evolution_instances:
+  evolution_store:

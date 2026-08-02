@@ -3,8 +3,6 @@ description: >
   Cliente novo chega pedindo agendamento, informa o motivo e escolhe um horário.
   É o fluxo que mais roda em produção, então é o que quebra mais caro.
 
-adapter: http
-
 contact:
   phone: "5511999999999"
   name: Maria Teste

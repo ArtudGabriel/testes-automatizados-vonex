@@ -28,6 +28,40 @@ export interface ProviderProfile {
   send(config: AppConfig, phone: string, text: string): HttpCall;
   /** undefined quando o provedor não expõe leitura de histórico (só webhook). */
   fetchMessages?(config: AppConfig, phone: string): HttpCall;
+  /**
+   * Consulta de estado da instância. Sessão de API não-oficial cai sozinha e o
+   * sintoma é "a IA não respondeu" — checar antes economiza a caçada.
+   */
+  health?(config: AppConfig): HttpCall;
+}
+
+/**
+ * Lê "está conectado?" da resposta de health de qualquer provedor. Cada um
+ * responde de um jeito, então procuramos os sinais conhecidos em vez de fixar
+ * um shape.
+ */
+export function isConnectedState(payload: unknown): boolean | undefined {
+  const record = asRecord(payload);
+
+  for (const candidate of [record, asRecord(record.instance), asRecord(record.data)]) {
+    const state = candidate.state ?? candidate.status ?? candidate.connectionStatus;
+    if (typeof state === 'string') {
+      const normalized = state.toLowerCase();
+      if (['open', 'connected', 'online', 'authenticated'].includes(normalized)) return true;
+      if (['close', 'closed', 'connecting', 'disconnected', 'offline'].includes(normalized)) {
+        return false;
+      }
+    }
+    if (typeof candidate.connected === 'boolean') return candidate.connected;
+  }
+
+  return undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function requireInstance(config: AppConfig): string {
@@ -62,6 +96,7 @@ const zApi: ProviderProfile = {
     path: `${config.WA_PROVIDER_FETCH_PATH ?? '/chat-messages'}/${phone}`,
     query: { amount: config.WA_PROVIDER_POLL_AMOUNT },
   }),
+  health: () => ({ method: 'GET', path: '/status' }),
 };
 
 const evolution: ProviderProfile = {
@@ -85,6 +120,10 @@ const evolution: ProviderProfile = {
       limit: config.WA_PROVIDER_POLL_AMOUNT,
     },
   }),
+  health: (config) => ({
+    method: 'GET',
+    path: `/instance/connectionState/${requireInstance(config)}`,
+  }),
 };
 
 const uazapi: ProviderProfile = {
@@ -104,6 +143,7 @@ const uazapi: ProviderProfile = {
     path: config.WA_PROVIDER_FETCH_PATH ?? '/message/find',
     body: { chatid: phone, limit: config.WA_PROVIDER_POLL_AMOUNT },
   }),
+  health: () => ({ method: 'GET', path: '/instance/status' }),
 };
 
 const PROFILES: Record<UnofficialProvider, ProviderProfile> = {

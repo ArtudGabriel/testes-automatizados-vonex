@@ -3,7 +3,6 @@ description: >
   Cliente recusa o autoatendimento desde a primeira mensagem. Testa o caminho de
   escalonamento, que costuma ser o menos exercitado no teste manual.
 
-adapter: http
 projectFile: ../projects/clinica-odonto.yaml
 
 contact:

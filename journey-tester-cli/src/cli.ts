@@ -70,7 +70,8 @@ program
       }
 
       for (const scenario of scenarios) {
-        const adapterName: AdapterName = options.adapter ?? scenario.spec.adapter ?? 'http';
+        const adapterName: AdapterName =
+          options.adapter ?? scenario.spec.adapter ?? config.DEFAULT_ADAPTER;
         reportScenarioHeader({
           name: scenario.spec.name,
           adapter: adapterName,

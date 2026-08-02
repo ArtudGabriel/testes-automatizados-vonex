@@ -2,10 +2,27 @@
 
 Roda jornadas de IA do WhatsApp contra cenários declarativos, sem ninguém digitando no celular.
 
+**Este projeto roda em Evolution API** — a vonex.ai não pode ser reconfigurada, então o
+transporte é um chip de teste automatizado conversando com o número onde a jornada está
+publicada. Setup completo:
+
 ```bash
 npm install
-cp .env.example .env      # preencher PLATFORM_WEBHOOK_URL
+cp .env.example .env
+
+docker compose up -d                 # sobe a Evolution API em :8080
+# abra http://localhost:8080/manager, crie a instância e leia o QR com o CHIP DE TESTE
+
+npm run dev -- doctor scenarios/     # confirma que o chip está conectado
 npm run dev -- run scenarios/agendamento-consulta.yaml
+```
+
+No `.env`, três linhas bastam para começar:
+
+```bash
+WA_PROVIDER_TOKEN=<a mesma AUTHENTICATION_API_KEY do compose>
+WA_PROVIDER_INSTANCE=teste
+BOT_PHONE_NUMBER=<número oficial onde a jornada está publicada>
 ```
 
 Exit code `1` quando algum cenário falha — pronto para CI.
@@ -94,15 +111,15 @@ npm run dev -- doctor scenarios/
 ```
 
 ```text
-✓ PLATFORM_WEBHOOK_URL: http://localhost:3000/webhooks/whatsapp respondeu 200
-✓ porta do graph sink: 127.0.0.1:4020 livre
+✓ adapter evolution: captura por polling a cada 1500ms (sem túnel) em http://localhost:8080
+✗ sessão do Evolution API: chip desconectado
+    → releia o QR no painel do provedor — a sessão caiu
 ✗ ANTHROPIC_API_KEY: 5 cenário(s) usam judge ou persona, mas a chave não está definida
     → defina ANTHROPIC_API_KEY no .env, ou rode só cenários determinísticos
-
-Do lado da vonex.ai (teste), confira:
-  · base URL da Cloud API na vonex.ai (ambiente de teste) → http://127.0.0.1:4020
-  · base URL das APIs externas da jornada → http://127.0.0.1:4030
 ```
+
+A checagem de sessão é a que mais paga: sessão Baileys cai sozinha (logout no celular,
+container reiniciado, troca de aparelho) e o sintoma seria um timeout genérico.
 
 Exit code 1 se algo bloqueia. E se o cenário rodar mas o sink não receber nada em turno
 nenhum, o runner avisa explicitamente que a base URL provavelmente não está apontada — em vez

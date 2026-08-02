@@ -3,7 +3,6 @@ description: >
   Roteiro fixo só testa o caminho feliz. Aqui o arquétipo `confused` escreve mal,
   mistura assuntos e não entende de primeira — caça o que roteiro não pega.
 
-adapter: http
 projectFile: ../projects/clinica-odonto.yaml
 
 contact:

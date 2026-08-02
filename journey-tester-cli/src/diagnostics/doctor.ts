@@ -1,7 +1,12 @@
 import { createServer } from 'node:http';
 import axios from 'axios';
 import { getConfig } from '../config/env.config';
-import { UNOFFICIAL_PROVIDERS } from '../adapters/unofficial/provider.profile';
+import {
+  getProviderProfile,
+  isConnectedState,
+  UNOFFICIAL_PROVIDERS,
+  type UnofficialProvider,
+} from '../adapters/unofficial/provider.profile';
 import type { LoadedScenario } from '../scenario/scenario.loader';
 
 export type CheckStatus = 'ok' | 'warn' | 'fail';
@@ -24,8 +29,11 @@ export async function runDoctor(scenarios: LoadedScenario[]): Promise<CheckResul
   const config = getConfig();
   const checks: CheckResult[] = [];
 
-  const adapters = new Set(scenarios.map((scenario) => scenario.spec.adapter ?? 'http'));
-  const usesHttp = adapters.has('http') || scenarios.length === 0;
+  const adapters = new Set(
+    scenarios.map((scenario) => scenario.spec.adapter ?? config.DEFAULT_ADAPTER),
+  );
+  if (scenarios.length === 0) adapters.add(config.DEFAULT_ADAPTER);
+  const usesHttp = adapters.has('http');
 
   if (usesHttp) {
     checks.push(await checkWebhook(config.PLATFORM_WEBHOOK_URL));
@@ -35,8 +43,12 @@ export async function runDoctor(scenarios: LoadedScenario[]): Promise<CheckResul
   const unofficial = [...adapters].filter((name) =>
     (UNOFFICIAL_PROVIDERS as readonly string[]).includes(name),
   );
-  if (unofficial.length > 0) {
-    checks.push(checkUnofficial(config, unofficial.join(', ')));
+  for (const provider of unofficial) {
+    const configCheck = checkUnofficial(config, provider);
+    checks.push(configCheck);
+    if (configCheck.status !== 'fail') {
+      checks.push(await checkProviderConnection(provider as UnofficialProvider, config));
+    }
   }
 
   const usesApiSpy = scenarios.some((scenario) => scenario.spec.apiSpy);
@@ -164,6 +176,69 @@ function checkCloudApi(
   };
 }
 
+/**
+ * Sessão de API não-oficial cai sozinha (troca de celular, logout no app,
+ * container reiniciado). Sem esta checagem o sintoma é um timeout genérico.
+ */
+async function checkProviderConnection(
+  provider: UnofficialProvider,
+  config: ReturnType<typeof getConfig>,
+): Promise<CheckResult> {
+  const profile = getProviderProfile(provider);
+  const name = `sessão do ${profile.label}`;
+
+  if (!profile.health) {
+    return { name, status: 'warn', detail: 'provedor sem endpoint de status conhecido' };
+  }
+
+  try {
+    const call = profile.health(config);
+    const response = await axios.request({
+      method: call.method,
+      url: `${profile.baseUrl(config)}${call.path}`,
+      headers: profile.authHeaders(config),
+      params: call.query,
+      data: call.body,
+      timeout: 8_000,
+      validateStatus: () => true,
+    });
+
+    if (response.status >= 400) {
+      return {
+        name,
+        status: 'fail',
+        detail: `${profile.label} respondeu ${response.status}`,
+        hint: 'confira instância, token e se o serviço está no ar',
+      };
+    }
+
+    const connected = isConnectedState(response.data);
+    if (connected === false) {
+      return {
+        name,
+        status: 'fail',
+        detail: 'chip desconectado',
+        hint: 'releia o QR no painel do provedor — a sessão caiu',
+      };
+    }
+
+    return connected === true
+      ? { name, status: 'ok', detail: 'chip conectado' }
+      : {
+          name,
+          status: 'warn',
+          detail: `estado não reconhecido: ${JSON.stringify(response.data).slice(0, 120)}`,
+        };
+  } catch (error) {
+    return {
+      name,
+      status: 'fail',
+      detail: `inacessível: ${(error as Error).message}`,
+      hint: `o serviço está rodando em ${config.WA_PROVIDER_BASE_URL}?`,
+    };
+  }
+}
+
 function checkUnofficial(
   config: ReturnType<typeof getConfig>,
   providers: string,
@@ -214,11 +289,14 @@ function usesLlm(scenario: LoadedScenario): boolean {
 /** Lembretes do que precisa estar configurado do lado da plataforma. */
 export function platformReminders(scenarios: LoadedScenario[]): string[] {
   const config = getConfig();
-  const adapters = new Set(scenarios.map((scenario) => scenario.spec.adapter ?? 'http'));
+  const adapters = new Set(
+    scenarios.map((scenario) => scenario.spec.adapter ?? config.DEFAULT_ADAPTER),
+  );
+  if (scenarios.length === 0) adapters.add(config.DEFAULT_ADAPTER);
   const reminders: string[] = [];
 
   // Os adapters não-oficiais não exigem nada da plataforma — é o ponto deles.
-  if (adapters.has('http') || scenarios.length === 0) {
+  if (adapters.has('http')) {
     reminders.push(
       `base URL da Cloud API na vonex.ai (ambiente de teste) → http://${config.GRAPH_SINK_HOST}:${config.GRAPH_SINK_PORT}`,
     );

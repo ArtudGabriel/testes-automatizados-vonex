@@ -24,8 +24,16 @@ const envSchema = z.object({
   API_SPY_HOST: z.string().default('127.0.0.1'),
   API_SPY_PORT: z.coerce.number().int().positive().default(4030),
 
+  /**
+   * Adapter usado quando o cenário não declara um. Este projeto roda em
+   * `evolution` porque a vonex.ai não pode ser reconfigurada para o `http`.
+   */
+  DEFAULT_ADAPTER: z
+    .enum(['http', 'z-api', 'evolution', 'uazapi', 'cloud-api'])
+    .default('evolution'),
+
   // Adapters não-oficiais (z-api | evolution | uazapi) — chip de teste
-  WA_PROVIDER_BASE_URL: z.string().url().default('https://api.z-api.io'),
+  WA_PROVIDER_BASE_URL: z.string().url().default('http://localhost:8080'),
   WA_PROVIDER_INSTANCE: z.string().optional(),
   WA_PROVIDER_TOKEN: z.string().optional(),
   /** Z-API: Client-Token da conta. Ignorado nos outros provedores. */

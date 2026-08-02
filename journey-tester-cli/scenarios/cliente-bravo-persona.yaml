@@ -3,7 +3,6 @@ description: >
   Cliente chega irritado e pressiona por exceção. Testa o que prompt costuma
   errar: manter o tom, não ceder ao que a política não permite, e escalar na hora certa.
 
-adapter: http
 projectFile: ../projects/clinica-odonto.yaml
 
 contact:

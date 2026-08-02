@@ -4,7 +4,6 @@ description: >
   ter chamado a agenda, ou chamar com o paciente errado. Aqui o spy intercepta
   as APIs externas e o cenário assevera sobre a chamada, não só sobre a resposta.
 
-adapter: http
 projectFile: ../projects/clinica-odonto.yaml
 
 contact:

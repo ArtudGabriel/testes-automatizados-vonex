@@ -14,7 +14,8 @@ específico do projeto. Não duplicar padrões globais aqui.
   WhatsApp API oficial entregue ao cliente, e o implantador conversa com a IA a partir do
   próprio número business até fechar o ciclo de ajuste de prompt e das conexões API da jornada.
   O objetivo é substituir esse laço manual por cenários declarativos versionados.
-- **Status atual:** v1 — CLI runner funcionando (roteiro fixo + persona simulada).
+- **Status atual:** v1 — CLI runner funcionando. Transporte do projeto: **Evolution API**
+  (chip de teste), porque a vonex.ai não pode ser reconfigurada para o adapter `http`.
 
 ### Stack (divergências do default)
 
@@ -40,11 +41,13 @@ scenario.yaml ─▶ runner ─▶ adapter ─▶ jornada na vonex.ai
 | Decisão | Trade-off |
 |---|---|
 | **Adapters de transporte plugáveis** | O mesmo cenário roda no webhook (CI, grátis) e no chip real (pré-go-live). Não se reescreve teste ao trocar de canal. |
-| **Adapter `http` como padrão** | A jornada roda na vonex.ai, então dá para injetar o payload de webhook direto nela: determinístico, roda em CI, não gasta conversa com a Meta. Não cobre o canal em si. |
+| **Adapter `http`** (não usado neste projeto) | A jornada roda na vonex.ai, então dá para injetar o payload de webhook direto nela: determinístico, roda em CI, não gasta conversa com a Meta. Não cobre o canal em si. |
 | **Graph sink** | A vonex.ai responde chamando a Cloud API de forma assíncrona — sem interceptar, o runner nunca veria a resposta. O sink finge ser o `graph.facebook.com`. Exige apontar a base URL da Cloud API do ambiente de teste para ele; se já é env var, zero mudança de código na plataforma. |
 | **Adapter `cloud-api`** | Canal real. Custa por conversa e exige template aprovado para abrir a janela de 24h. Smoke test, não suíte de CI. |
 | **API spy + stubs** | Mesmo truque do sink, aplicado às APIs que a jornada consome. Sem ele a asserção só vê o texto: jornada que responde "agendado!" sem chamar a agenda passa no teste. Os stubs ainda dão determinismo — a jornada para de depender do estado do banco de teste. Cobre só HTTP; fila e banco direto ficam de fora. |
 | **Adapters não-oficiais (`z-api`, `evolution`, `uazapi`)** | Caminho quando **não dá para reconfigurar a vonex.ai** — que é o caso real do time. Um chip comum automatizado conversa com o número do bot: a jornada receptiva vê um cliente de verdade, sem template e sem janela de 24h, e a plataforma não é tocada. Em troca, API fora do ToS do WhatsApp, com risco de ban do chip conectado (aceito explicitamente pelo time) e sessão que cai. Captura por polling do chat, o que dispensa túnel público. |
+| **Evolution como padrão do projeto** | Self-hosted (`docker compose up -d`), sem mensalidade por instância e sob nosso controle. `DEFAULT_ADAPTER` deixa isso explícito em vez de espalhar `adapter: evolution` em todo cenário. |
+| **Health check da sessão no `doctor`** | Sessão Baileys cai sozinha (logout no celular, container reiniciado) e o sintoma seria timeout genérico. Checar `connectionState` antes transforma uma caçada em uma linha de saída. |
 | **Um adapter, três perfis de provedor** | Os três provedores fazem a mesma coisa com contratos HTTP diferentes. Um adapter por provedor triplicaria a lógica de polling, watermark e normalização. O perfil (`src/adapters/unofficial/provider.profile.ts`) declara só o que difere: auth, caminhos e corpo. Provedor novo é um bloco de config; contrato divergente se corrige por env, sem tocar em código. |
 | **Playwright no WhatsApp Web — recusado** | Frágil (DOM da Meta muda), risco de ban, manutenção infinita. A Z-API cobre o mesmo caso com contrato de API estável em vez de DOM. |
 | **Asserção em 3 níveis** | Resposta de LLM é não-determinística. `contains`/`matches`/`maxLatencyMs` para o objetivo; `judge` (LLM-as-judge com rubrica) para o semântico. Judge sozinho é caro e ruidoso; determinístico sozinho não cobre. |
@@ -76,7 +79,7 @@ scenario.yaml ─▶ runner ─▶ adapter ─▶ jornada na vonex.ai
 Entregue: CLI runner, cinco adapters (um deles com três perfis de provedor), graph sink, asserções determinísticas + judge, modo
 persona com catálogo de arquétipos, briefing de projeto compartilhável, spy + stubs das APIs
 externas, comando `doctor` de pré-voo, reporters console/JSON/JUnit, workflow de CI,
-136 testes unitários.
+144 testes unitários.
 
 Próximos, na ordem de valor:
 
@@ -122,7 +125,8 @@ Próximos, na ordem de valor:
 ```bash
 cd journey-tester-cli
 npm install && cp .env.example .env
-npm run dev -- doctor scenarios/       # checa config antes de rodar
+docker compose up -d                   # Evolution API em :8080, leia o QR no /manager
+npm run dev -- doctor scenarios/       # confirma que o chip está conectado
 npm run dev -- run scenarios/agendamento-consulta.yaml
 npm run dev -- validate scenarios/
 npm run dev -- personas -v
