@@ -1,4 +1,5 @@
 import type { RecordedApiCall } from '../capture/api-spy.server';
+import type { SinkDelivery } from '../capture/graph-sink.server';
 import type { OutboundMessage } from '../shared/whatsapp.types';
 
 export type AssertionKind =
@@ -9,7 +10,8 @@ export type AssertionKind =
   | 'maxLatencyMs'
   | 'messageCount'
   | 'apiCall'
-  | 'noApiCall';
+  | 'noApiCall'
+  | 'sinkRetries';
 
 export interface AssertionResult {
   kind: AssertionKind;
@@ -28,6 +30,8 @@ export interface TurnResult {
   botMessages: OutboundMessage[];
   /** Chamadas que a jornada fez à API externa durante este turno. */
   apiCalls: RecordedApiCall[];
+  /** Tentativas de entrega vistas pelo sink, recusadas inclusive. */
+  deliveries: SinkDelivery[];
   latencyMs: number;
   timedOut: boolean;
   assertions: AssertionResult[];

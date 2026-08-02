@@ -59,7 +59,43 @@ export async function runDoctor(scenarios: LoadedScenario[]): Promise<CheckResul
   checks.push(checkAnthropicKey(scenarios, Boolean(config.ANTHROPIC_API_KEY)));
   checks.push(checkCloudApi(scenarios, config));
 
+  const faultCheck = checkSinkFaults(scenarios, config);
+  if (faultCheck) checks.push(faultCheck);
+
   return checks;
+}
+
+/**
+ * `sinkFaults` só acontece no adapter http. Como o default do projeto é
+ * `evolution`, um cenário que omite `adapter` herda um transporte sem sink e
+ * passaria verde sem ter injetado falha nenhuma — o pior tipo de teste.
+ */
+export function checkSinkFaults(
+  scenarios: LoadedScenario[],
+  config: Pick<ReturnType<typeof getConfig>, 'DEFAULT_ADAPTER'>,
+): CheckResult | undefined {
+  const withFaults = scenarios.filter((scenario) => scenario.spec.sinkFaults?.length);
+  if (withFaults.length === 0) return undefined;
+
+  const name = 'injeção de falha no sink';
+  const semSink = withFaults.filter(
+    (scenario) => (scenario.spec.adapter ?? config.DEFAULT_ADAPTER) !== 'http',
+  );
+
+  if (semSink.length > 0) {
+    return {
+      name,
+      status: 'fail',
+      detail: `${semSink.length} cenário(s) declaram sinkFaults mas rodariam no adapter ${config.DEFAULT_ADAPTER}`,
+      hint: 'declare `adapter: http` no cenário ou rode com `--adapter http` — sem sink não há falha a injetar',
+    };
+  }
+
+  return {
+    name,
+    status: 'ok',
+    detail: `${withFaults.length} cenário(s) vão exercitar o retry da plataforma`,
+  };
 }
 
 async function checkWebhook(url?: string): Promise<CheckResult> {

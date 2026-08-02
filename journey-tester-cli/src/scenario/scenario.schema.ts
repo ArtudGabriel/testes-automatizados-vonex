@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { archetypeIds } from '../persona/archetypes';
 import { apiCallAssertionSchema, apiSpySchema } from './api-spy.schema';
 import { projectSchema } from './project.schema';
+import { sinkFaultSchema, sinkRetriesSchema } from './sink-fault.schema';
 
 export const ADAPTER_NAMES = ['http', 'z-api', 'evolution', 'uazapi', 'cloud-api'] as const;
 export type AdapterName = (typeof ADAPTER_NAMES)[number];
@@ -39,6 +40,8 @@ export const assertionSchema = z
     apiCall: apiCallAssertionSchema.optional(),
     /** A jornada NÃO chamou este endpoint. */
     noApiCall: z.string().min(1).optional(),
+    /** Quantos reenvios a plataforma fez depois de o sink recusar a entrega. */
+    sinkRetries: sinkRetriesSchema.optional(),
   })
   .superRefine((value, ctx) => {
     const defined = Object.values(value).filter((entry) => entry !== undefined);
@@ -127,6 +130,8 @@ export const scenarioSchema = z
     projectFile: z.string().min(1).optional(),
     /** Intercepta e stuba as APIs externas que a jornada consome. */
     apiSpy: apiSpySchema.optional(),
+    /** Faz o sink devolver erro da Meta, para exercitar o retry da plataforma. */
+    sinkFaults: z.array(sinkFaultSchema).optional(),
     steps: z.array(stepSchema).min(1).optional(),
     persona: personaSchema.optional(),
   })
@@ -157,16 +162,38 @@ export const scenarioSchema = z
       });
     }
 
-    const usesApiAssertions = [
+    const assertions = [
       ...(value.steps ?? []).flatMap((step) => step.expect),
       ...(value.persona?.expect ?? []),
-    ].some((assertion) => assertion.apiCall !== undefined || assertion.noApiCall !== undefined);
+    ];
+
+    const usesApiAssertions = assertions.some(
+      (assertion) => assertion.apiCall !== undefined || assertion.noApiCall !== undefined,
+    );
 
     if (usesApiAssertions && !value.apiSpy) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
           'asserções `apiCall`/`noApiCall` exigem o bloco `apiSpy` — sem ele nada é interceptado',
+      });
+    }
+
+    if (assertions.some((assertion) => assertion.sinkRetries !== undefined) && !value.sinkFaults) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'asserção `sinkRetries` exige o bloco `sinkFaults` — sem falha injetada não há reenvio a contar',
+      });
+    }
+
+    // O sink é do adapter `http`. Nos outros a plataforma fala com a Meta de
+    // verdade e não há nada para injetar — melhor barrar do que passar vazio.
+    if (value.sinkFaults && value.adapter !== undefined && value.adapter !== 'http') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['sinkFaults'],
+        message: `\`sinkFaults\` só funciona no adapter http (este cenário usa ${value.adapter})`,
       });
     }
   });

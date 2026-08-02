@@ -51,6 +51,7 @@ mandaria a mensagem e nunca veria a resposta.
 | Template p/ abrir conversa | n/a | não | **sim** (erro 131047 sem ele) |
 | Custo | zero | mensalidade do provedor | por conversa |
 | Roda em CI | sim | sim | não |
+| Injeta falha da Meta | **sim** (`sinkFaults`) | não | não |
 | Risco | nenhum | **ban do chip** (API fora do ToS) | nenhum |
 | Quando usar | quando dá para configurar a plataforma | quando não dá | smoke test do canal antes do go-live |
 
@@ -178,6 +179,7 @@ mensagens seguidas; agrupá-las evita asserção que falha à toa. É espera pel
 | `judge: { criteria, mustNot }` | idem, com condição proibida |
 | `apiCall: { to, times, bodyContains }` | a jornada chamou a API externa como deveria |
 | `noApiCall: "DELETE /x/*"` | a jornada **não** chamou este endpoint |
+| `sinkRetries: { min, max }` | a plataforma reenviou depois de a Meta falhar (ver `sinkFaults`) |
 
 O texto avaliado inclui os títulos dos botões/lista (`[opções: 09:00 | 14:00]`), então dá para
 asseverar sobre o que a IA ofereceu, não só sobre o que ela escreveu.
@@ -241,6 +243,59 @@ são redigidos antes de qualquer coisa ir para o relatório ou para o JSON.
 
 Escopo: `apiCall`/`noApiCall` num `step` olham as chamadas **daquele turno**; no `expect` da
 persona, olham a conversa inteira.
+
+### Injeção de falha: e quando a Meta falha?
+
+Em produção a Cloud API falha — rate limit, 500, janela de 24h fechada. Se a jornada na
+vonex.ai não trata isso, o cliente **nunca recebe a resposta**, e nenhum teste normal pega:
+do lado de cá tudo pareceu bem. `sinkFaults` faz o sink recusar a entrega de propósito.
+
+```yaml
+adapter: http          # injeção de falha só existe onde existe sink
+
+sinkFaults:
+  - fault: rate-limit  # 429 / 130429, o erro real da Meta
+    afterCalls: 1      # deixa a 1ª entrega passar
+    times: 2           # as duas seguintes voltam com erro
+
+steps:
+  - user: "limpeza, pode ser semana que vem"
+    expect:
+      - sinkRetries: { min: 1, max: 4 }   # insistiu, mas não sem teto
+      - judge: ofereceu horários concretos
+      - messageCount: { max: 3 }          # reenvio não pode virar mensagem duplicada
+```
+
+| Preset | Status/código | O que a plataforma deveria fazer |
+|---|---|---|
+| `rate-limit` | 429 / 130429 | reenviar com backoff |
+| `spam-rate-limit` | 429 / 131048 | backoff longo, ou desistir sem perder a conversa |
+| `server-error` | 500 / 131000 | reenviar — é transitório |
+| `unavailable` | 503 / 131016 | reenviar com backoff |
+| `outside-window` | 400 / 131047 | abrir a janela com template; reenviar o texto não resolve |
+| `expired-token` | 401 / 190 | renovar credencial e avisar; loop de retry só queima log |
+| `undeliverable` | 400 / 131026 | **não** reenviar — encerrar ou escalar |
+
+Sem preset, dá para declarar `status`, `code` e `message` na mão; `delayMs` segura a resposta
+(testa timeout do lado da plataforma) e `drop: true` derruba a conexão em vez de responder.
+`times: all` falha até o fim do cenário.
+
+Três coisas importam no comportamento:
+
+- **Entrega recusada não conta como mensagem do turno.** Ela não chegou ao cliente. Se
+  contasse, a tentativa e o reenvio virariam duas mensagens e todo `messageCount` quebraria.
+- **`afterCalls` conta tentativas, reenvio incluído** — não mensagens distintas.
+- **Reenvio é a mesma mensagem, para o mesmo número, depois de uma recusa.** É o que
+  `sinkRetries` conta. `min` prova que a plataforma insiste; `max` pega retry sem teto, que
+  duplica mensagem no WhatsApp do cliente assim que a Meta volta.
+
+Se a plataforma **não** reenvia, o turno estoura o `replyTimeoutMs` e o relatório diz por quê:
+
+```
+  ✗ turno 2  → limpeza
+      ⚡ sink recusou a entrega 2: rate-limit (429/130429)
+      ✗ a IA não respondeu em tempo
+```
 
 ### Briefing do projeto
 
@@ -368,8 +423,11 @@ quebrou o fluxo. `--continue-on-failure` roda tudo mesmo assim.
 - **Cloud API precisa de template para abrir conversa.** Fora da janela de 24h a Meta exige
   template aprovado; sem ele o primeiro `sendText` volta com erro 131047.
 - **Persona não é determinística** (ver acima).
-- **Sink não simula falha da Meta.** Ele sempre responde 200. Testar retry/erro de envio da
-  plataforma exigiria modo de injeção de falha.
+- **Injeção de falha só no adapter `http`.** É onde existe sink. Nos adapters não-oficiais e no
+  `cloud-api` a plataforma fala com a Meta de verdade, e não há o que injetar — `doctor` avisa
+  quando um cenário com `sinkFaults` cairia num adapter sem sink.
+- **`sinkRetries` conta reenvio, não backoff.** O intervalo entre as tentativas fica no
+  relatório (`receivedAt` de cada entrega), mas não há asserção sobre ele.
 - **Um cenário por vez.** Sink e spy usam porta fixa, então rodar cenários em paralelo exigiria
   alocação de porta por cenário.
 - **O spy cobre HTTP.** Integração por fila, webhook de saída ou banco direto não é

@@ -157,3 +157,79 @@ describe('personaSchema (via scenarioSchema)', () => {
     if (result.success) expect(result.data.persona?.firstMessage).toBeUndefined();
   });
 });
+
+describe('sinkFaults e sinkRetries (via scenarioSchema)', () => {
+  const base = {
+    name: 'retry da plataforma',
+    steps: [{ user: 'oi', expect: [] }],
+  };
+
+  it('aceita preset de falha', () => {
+    const result = scenarioSchema.safeParse({
+      ...base,
+      sinkFaults: [{ fault: 'rate-limit', times: 2 }],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.sinkFaults?.[0]?.afterCalls).toBe(0);
+  });
+
+  it('recusa regra sem preset, status ou drop', () => {
+    const result = scenarioSchema.safeParse({ ...base, sinkFaults: [{ afterCalls: 1 }] });
+    expect(result.success).toBe(false);
+  });
+
+  it('recusa preset inexistente', () => {
+    const result = scenarioSchema.safeParse({ ...base, sinkFaults: [{ fault: 'meta-caiu' }] });
+    expect(result.success).toBe(false);
+  });
+
+  it('exige sinkFaults para asseverar sinkRetries', () => {
+    const result = scenarioSchema.safeParse({
+      name: 'x',
+      steps: [{ user: 'oi', expect: [{ sinkRetries: { min: 1 } }] }],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.message.includes('sinkFaults'))).toBe(true);
+    }
+  });
+
+  it('sinkRetries com sinkFaults declarado passa', () => {
+    const result = scenarioSchema.safeParse({
+      ...base,
+      sinkFaults: [{ fault: 'server-error' }],
+      steps: [{ user: 'oi', expect: [{ sinkRetries: { min: 1, max: 3 } }] }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('sinkRetries precisa de min ou max', () => {
+    const result = scenarioSchema.safeParse({
+      ...base,
+      sinkFaults: [{ fault: 'server-error' }],
+      steps: [{ user: 'oi', expect: [{ sinkRetries: {} }] }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('barra sinkFaults em adapter sem sink', () => {
+    const result = scenarioSchema.safeParse({
+      ...base,
+      adapter: 'evolution',
+      sinkFaults: [{ fault: 'rate-limit' }],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.message.includes('adapter http'))).toBe(true);
+    }
+  });
+
+  it('sinkRetries continua sendo uma asserção por item', () => {
+    const result = scenarioSchema.safeParse({
+      ...base,
+      sinkFaults: [{ fault: 'rate-limit' }],
+      steps: [{ user: 'oi', expect: [{ sinkRetries: { min: 1 }, contains: 'ok' }] }],
+    });
+    expect(result.success).toBe(false);
+  });
+});

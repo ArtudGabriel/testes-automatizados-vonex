@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import axios, { type AxiosInstance } from 'axios';
 import type { AppConfig } from '../config/env.config';
-import { GraphSinkServer } from '../capture/graph-sink.server';
+import { GraphSinkServer, type SinkDelivery } from '../capture/graph-sink.server';
 import { logger } from '../shared/logger';
 import { buildInboundWebhook, type InboundContact } from '../shared/whatsapp.types';
 import type {
@@ -49,6 +49,7 @@ export class HttpChannelAdapter implements ChannelAdapter {
 
   async open(context: ConversationContext): Promise<void> {
     this.contact = context.contact;
+    this.sink.setFaults(context.sinkFaults ?? []);
     await this.sink.start();
     this.unsubscribe = this.sink.onMessage((message) => this.collector.push(message));
     this.collector.reset();
@@ -83,6 +84,18 @@ export class HttpChannelAdapter implements ChannelAdapter {
     this.unsubscribe?.();
     this.unsubscribe = undefined;
     await this.sink.stop();
+  }
+
+  deliveryCount(): number {
+    return this.sink.deliveryCount;
+  }
+
+  deliveriesSince(marker: number): SinkDelivery[] {
+    return this.sink.deliveriesSince(marker);
+  }
+
+  allDeliveries(): SinkDelivery[] {
+    return this.sink.allDeliveries();
   }
 
   private async deliver(payload: Record<string, unknown>): Promise<void> {

@@ -35,6 +35,10 @@ export function reportTurn(turn: TurnResult): void {
   const label = turn.isOptionReply ? pc.cyan(turn.userMessage) : turn.userMessage;
   out(`  ${marker} ${pc.dim(`turno ${turn.index + 1}`)}  ${pc.bold('→')} ${label}`);
 
+  // Antes da resposta: sem isto, "a IA não respondeu" esconde que fomos nós
+  // que recusamos a entrega.
+  reportDeliveries(turn);
+
   if (turn.timedOut) {
     out(pc.red(`      ${FAIL} a IA não respondeu em tempo`));
     return;
@@ -57,6 +61,19 @@ export function reportTurn(turn: TurnResult): void {
 
   for (const assertion of turn.assertions) {
     reportAssertion(assertion, '      ');
+  }
+}
+
+/** Só aparece quando o cenário injeta falha — no caminho normal seria ruído. */
+function reportDeliveries(turn: TurnResult): void {
+  for (const delivery of turn.deliveries) {
+    if (delivery.faultInjected !== undefined) {
+      out(
+        pc.yellow(`      ⚡ sink recusou a entrega ${delivery.index}: ${delivery.faultInjected}`),
+      );
+    } else if (delivery.isRetry) {
+      out(pc.dim(`      ↻ plataforma reenviou (entrega ${delivery.index}, aceita)`));
+    }
   }
 }
 

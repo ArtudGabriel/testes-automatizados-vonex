@@ -1,8 +1,12 @@
+import type { SinkDelivery } from '../capture/graph-sink.server';
+import type { SinkFaultSpec } from '../scenario/sink-fault.schema';
 import type { InboundContact, OutboundMessage } from '../shared/whatsapp.types';
 
 export interface ConversationContext {
   contact: InboundContact;
   scenarioName: string;
+  /** Só o adapter `http` aplica: falhas a injetar nas respostas da Cloud API. */
+  sinkFaults?: SinkFaultSpec[];
 }
 
 export interface WaitOptions {
@@ -30,4 +34,12 @@ export interface ChannelAdapter {
   sendOptionReply(optionId: string, optionTitle?: string): Promise<void>;
   waitForReply(options: WaitOptions): Promise<TurnReply>;
   close(): Promise<void>;
+
+  /**
+   * Tentativas de entrega observadas. Só o adapter `http` tem sink; nos
+   * demais a entrega acontece fora do nosso alcance.
+   */
+  deliveryCount?(): number;
+  deliveriesSince?(marker: number): SinkDelivery[];
+  allDeliveries?(): SinkDelivery[];
 }

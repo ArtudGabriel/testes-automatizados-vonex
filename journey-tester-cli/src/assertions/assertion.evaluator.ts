@@ -1,4 +1,5 @@
 import type { RecordedApiCall } from '../capture/api-spy.server';
+import type { SinkDelivery } from '../capture/graph-sink.server';
 import type { ProjectSpec } from '../scenario/project.schema';
 import type { AssertionSpec } from '../scenario/scenario.schema';
 import type { AssertionResult } from '../runner/run-result.types';
@@ -13,6 +14,7 @@ import {
   type TurnSnapshot,
 } from './deterministic.evaluator';
 import { evaluateJudge } from './judge.evaluator';
+import { evaluateSinkRetries } from './sink-retry.evaluator';
 
 export interface EvaluationContext {
   turn: TurnSnapshot;
@@ -23,6 +25,8 @@ export interface EvaluationContext {
   project?: ProjectSpec;
   /** Chamadas que a jornada fez à API externa durante o turno. */
   apiCalls: RecordedApiCall[];
+  /** Tentativas de entrega vistas pelo sink durante o turno. */
+  deliveries: SinkDelivery[];
 }
 
 /**
@@ -55,6 +59,9 @@ async function evaluateOne(
   }
   if (spec.apiCall !== undefined) return evaluateApiCall(spec.apiCall, context.apiCalls);
   if (spec.noApiCall !== undefined) return evaluateNoApiCall(spec.noApiCall, context.apiCalls);
+  if (spec.sinkRetries !== undefined) {
+    return evaluateSinkRetries(spec.sinkRetries, context.deliveries);
+  }
 
   if (spec.judge !== undefined) {
     const judge = typeof spec.judge === 'string' ? { criteria: spec.judge } : spec.judge;

@@ -1,0 +1,44 @@
+name: Falha da Meta — a plataforma reenvia?
+description: >
+  A Cloud API falha em produção: rate limit, 500, janela de 24h fechada. Se a
+  jornada na vonex.ai não trata isso, o cliente simplesmente nunca recebe a
+  resposta — e nenhum teste normal pega, porque do lado de cá tudo pareceu bem.
+  Aqui o sink recusa a entrega de propósito e o cenário assevera o que vem depois.
+
+# Injeção de falha só existe no sink, que só o adapter http tem.
+adapter: http
+
+contact:
+  phone: "5511999999999"
+  name: Maria Teste
+
+# A plataforma provavelmente reenvia com backoff — o turno precisa de folga.
+replyTimeoutMs: 45000
+settleMs: 3000
+
+sinkFaults:
+  # Primeira entrega da conversa passa: é a resposta ao "oi".
+  # Depois, duas tentativas seguidas voltam com rate limit da Meta.
+  - fault: rate-limit
+    afterCalls: 1
+    times: 2
+
+steps:
+  - user: "oi, quero marcar uma consulta"
+    expect:
+      - judge: cumprimentou e perguntou o motivo do contato ou a especialidade
+      - sinkRetries:
+          max: 0    # esta entrega passou de primeira; nada a reenviar
+
+  - user: "limpeza, pode ser semana que vem"
+    expect:
+      # A resposta deste turno leva 429 duas vezes. Se ela chegar, foi reenvio:
+      # a plataforma insistiu em vez de engolir a falha.
+      - sinkRetries:
+          min: 1
+          # Teto porque retry sem limite duplica mensagem no WhatsApp do
+          # cliente assim que a Meta volta.
+          max: 4
+      - judge: ofereceu horários concretos
+      - messageCount:
+          max: 3    # o reenvio não pode virar mensagem duplicada

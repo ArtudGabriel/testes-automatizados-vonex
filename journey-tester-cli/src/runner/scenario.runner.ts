@@ -2,6 +2,7 @@ import { evaluateAssertions } from '../assertions/assertion.evaluator';
 import { flattenTurn } from '../assertions/deterministic.evaluator';
 import type { ChannelAdapter, TurnReply } from '../adapters/channel.adapter';
 import { ApiSpyServer, type RecordedApiCall } from '../capture/api-spy.server';
+import type { SinkDelivery } from '../capture/graph-sink.server';
 import { getConfig } from '../config/env.config';
 import {
   describePersona,
@@ -47,7 +48,12 @@ export class ScenarioRunner {
 
     try {
       await this.startApiSpy(spec);
-      await this.adapter.open({ contact: spec.contact, scenarioName: spec.name });
+      this.warnIfFaultsIgnored(spec);
+      await this.adapter.open({
+        contact: spec.contact,
+        scenarioName: spec.name,
+        ...(spec.sinkFaults ? { sinkFaults: spec.sinkFaults } : {}),
+      });
       if (spec.persona) {
         await this.runPersona(spec, result, project);
       } else {
@@ -75,6 +81,29 @@ export class ScenarioRunner {
       result.finalAssertions.every((assertion) => assertion.passed);
 
     return result;
+  }
+
+  /**
+   * O cenário pode omitir `adapter` e herdar o default. Se o efetivo não tem
+   * sink, as falhas declaradas simplesmente não acontecem — e um cenário que
+   * testa retry passaria sem ter testado nada.
+   */
+  private warnIfFaultsIgnored(spec: ScenarioSpec): void {
+    if (!spec.sinkFaults?.length || this.adapter.deliveriesSince) return;
+
+    logger.warn(
+      `\`sinkFaults\` ignorado: o adapter ${this.adapter.name} não tem sink. ` +
+        'Rode com `--adapter http` para exercitar o retry da plataforma.',
+    );
+  }
+
+  /** Marcador do início do turno; sem sink, sempre 0. */
+  private deliveryMarker(): number {
+    return this.adapter.deliveryCount?.() ?? 0;
+  }
+
+  private deliveriesSince(marker: number): SinkDelivery[] {
+    return this.adapter.deliveriesSince?.(marker) ?? [];
   }
 
   private async startApiSpy(spec: ScenarioSpec): Promise<void> {
@@ -118,6 +147,7 @@ export class ScenarioRunner {
     const transcript = buildTranscript(result.turns);
     const userMessage = step.user ?? `[toca em "${step.tapOption}"]`;
     const apiMarker = this.apiSpy?.callCount ?? 0;
+    const deliveryMarker = this.deliveryMarker();
 
     if (step.tapOption !== undefined) {
       const optionTitle = findOptionTitle(result.turns, step.tapOption);
@@ -139,6 +169,7 @@ export class ScenarioRunner {
       expectations: step.expect,
       transcript,
       apiCalls: this.apiSpy?.callsSince(apiMarker) ?? [],
+      deliveries: this.deliveriesSince(deliveryMarker),
       ...(project === undefined ? {} : { project }),
     });
   }
@@ -164,6 +195,7 @@ export class ScenarioRunner {
     for (let index = 0; index < persona.maxTurns; index += 1) {
       const transcript = buildTranscript(result.turns);
       const apiMarker = this.apiSpy?.callCount ?? 0;
+      const deliveryMarker = this.deliveryMarker();
 
       await this.adapter.sendText(userMessage);
       const reply = await this.adapter.waitForReply({
@@ -179,6 +211,7 @@ export class ScenarioRunner {
         expectations: [],
         transcript,
         apiCalls: this.apiSpy?.callsSince(apiMarker) ?? [],
+        deliveries: this.deliveriesSince(deliveryMarker),
         project,
       });
       result.turns.push(turn);
@@ -220,6 +253,7 @@ export class ScenarioRunner {
       userMessage: `objetivo da persona: ${persona.goal}`,
       transcript: buildTranscript(result.turns),
       apiCalls: this.apiSpy?.allCalls() ?? [],
+      deliveries: this.adapter.allDeliveries?.() ?? [],
       project,
     });
   }
@@ -232,6 +266,7 @@ export class ScenarioRunner {
     expectations: AssertionSpec[];
     transcript: string;
     apiCalls: RecordedApiCall[];
+    deliveries: SinkDelivery[];
     project?: ProjectSpec;
   }): Promise<TurnResult> {
     const assertions = await evaluateAssertions(params.expectations, {
@@ -239,6 +274,7 @@ export class ScenarioRunner {
       userMessage: params.userMessage,
       transcript: params.transcript,
       apiCalls: params.apiCalls,
+      deliveries: params.deliveries,
       ...(params.project === undefined ? {} : { project: params.project }),
     });
 
@@ -248,6 +284,7 @@ export class ScenarioRunner {
       isOptionReply: params.isOptionReply,
       botMessages: params.reply.messages,
       apiCalls: params.apiCalls,
+      deliveries: params.deliveries,
       latencyMs: params.reply.latencyMs,
       timedOut: params.reply.timedOut,
       assertions,
@@ -266,6 +303,19 @@ function warnIfNothingCaptured(result: ScenarioResult): void {
 
   const capturedNothing = result.turns.every((turn) => turn.botMessages.length === 0);
   if (!capturedNothing) return;
+
+  // Com falha injetada a causa é conhecida: o sink recusou tudo e a plataforma
+  // não reenviou. Não é o mesmo problema de "nada chegou".
+  const refused = result.turns.flatMap((turn) =>
+    turn.deliveries.filter((delivery) => delivery.faultInjected !== undefined),
+  );
+  if (refused.length > 0) {
+    logger.warn(
+      `nenhuma resposta chegou ao cliente: o sink recusou ${refused.length} entrega(s) ` +
+        'e a plataforma não reenviou nenhuma',
+    );
+    return;
+  }
 
   const cause =
     result.adapter === 'http'
